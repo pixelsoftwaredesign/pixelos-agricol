@@ -499,6 +499,31 @@ def cmd_service(args):
                 icon = "OK" if s["running"] else "KO"
                 print(f"  [{icon}] {s['name']:<25} port {s['port']}")
 
+    elif args.action == "autostart":
+        st = svc.autostart_status()
+        if args.name == "install":
+            res = svc.autostart_install()
+            if args.json:
+                print(json.dumps(res, indent=2))
+            else:
+                print(f"  Autostart: {res['status']} ({res.get('platform','?')})")
+                if res.get("cmd"):
+                    print(f"  Commande: {res['cmd']}")
+        elif args.name == "remove":
+            res = svc.autostart_remove()
+            print(f"  Autostart: {res['status']}")
+        else:
+            if args.json:
+                print(json.dumps(st, indent=2))
+            else:
+                if st.get("installed"):
+                    print(f"  Autostart installe sur {st['platform']}")
+                    if st.get("cmd"):
+                        print(f"  Commande: {st['cmd']}")
+                else:
+                    print("  Autostart NON installe")
+                    print("  -> pixelos service autostart install")
+
 
 def cmd_config(args):
     """Gestion de la configuration."""
@@ -659,7 +684,8 @@ def main():
 
     # service
     p = sub.add_parser("service", help="Gestion des services PixelOS")
-    p.add_argument("action", choices=["status", "start", "stop", "restart", "logs", "health"])
+    p.add_argument("action", choices=["status", "start", "stop", "restart",
+                                      "logs", "health", "autostart"])
     p.add_argument("name", nargs="?", default=None,
                    help="Service: mysql, mongodb, mosquitto, backend, dashboard, pixelos-web, all")
     p.add_argument("--tail", type=int, default=50, help="Nombre de lignes de logs")

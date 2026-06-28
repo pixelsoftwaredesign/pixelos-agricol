@@ -285,6 +285,24 @@ if HAS_FLASK:
         svc = ServiceManager()
         return jsonify(svc.status())
 
+    @app.route("/api/autostart", methods=["GET"])
+    def api_autostart_status():
+        from core.services import ServiceManager
+        svc = ServiceManager()
+        return jsonify(svc.autostart_status())
+
+    @app.route("/api/autostart/install", methods=["POST"])
+    def api_autostart_install():
+        from core.services import ServiceManager
+        svc = ServiceManager()
+        return jsonify(svc.autostart_install())
+
+    @app.route("/api/autostart/remove", methods=["POST"])
+    def api_autostart_remove():
+        from core.services import ServiceManager
+        svc = ServiceManager()
+        return jsonify(svc.autostart_remove())
+
     @app.route("/api/services/<name>/<action>", methods=["POST"])
     def api_service_action(name, action):
         from core.services import ServiceManager

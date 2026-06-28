@@ -300,6 +300,163 @@ class ServiceManager:
             "timestamp": datetime.now().isoformat(),
         }
 
+    # ── Auto-start au boot ──────────────────────────────────
+
+    def autostart_install(self) -> dict:
+        """Enregistre pixelos-agent comme service de démarrage OS."""
+        platform = sys.platform
+        agent_path = str(ROOT / "src" / "agent" / "agent.py")
+        log.info("Installation autostart", platform=platform)
+
+        try:
+            if platform == "win32":
+                return self._autostart_windows(agent_path)
+            elif platform in ("linux", "linux2"):
+                return self._autostart_systemd(agent_path)
+            elif platform == "openbsd" or "openbsd" in platform:
+                return self._autostart_openbsd(agent_path)
+            else:
+                return {"status": "error",
+                        "message": f"Plateforme non supportée: {platform}"}
+        except Exception as e:
+            log.error("Autostart install failed", error=str(e))
+            return {"status": "error", "message": str(e)}
+
+    def _autostart_windows(self, agent_path: str) -> dict:
+        """Install via Windows Task Scheduler or Run registry key."""
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path,
+                                 0, winreg.KEY_SET_VALUE)
+            cmd = f'"{sys.executable}" "{agent_path}"'
+            winreg.SetValueEx(key, "PixelOSAgent", 0,
+                              winreg.REG_SZ, cmd)
+            winreg.CloseKey(key)
+            return {"status": "ok",
+                    "platform": "windows",
+                    "method": "HKCU\\Run",
+                    "cmd": cmd}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _autostart_systemd(self, agent_path: str) -> dict:
+        """Create systemd service unit."""
+        unit = f"""[Unit]
+Description=PixelOS Agent
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+ExecStart={sys.executable} {agent_path}
+Environment=PIXELOS_NODE_ID=pixelos-server
+Environment=PIXELOS_ROLE=server
+Environment=PYTHONPATH={ROOT / "src"}
+WorkingDirectory={ROOT}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+        unit_path = "/etc/systemd/system/pixelos-agent.service"
+        try:
+            with open(unit_path, "w") as f:
+                f.write(unit)
+            subprocess.run(["systemctl", "daemon-reload"], timeout=10)
+            subprocess.run(["systemctl", "enable", "pixelos-agent"], timeout=10)
+            return {"status": "ok", "platform": "linux",
+                    "unit": unit_path}
+        except PermissionError:
+            return {"status": "error",
+                    "message": "Permission refusée: exécuter avec sudo"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _autostart_openbsd(self, agent_path: str) -> dict:
+        """Create OpenBSD rc script."""
+        rc_content = f"""#!/bin/sh
+#
+# PixelOS Agent - /etc/rc.d/pixelos_agent
+#
+daemon="{sys.executable}"
+daemon_flags="{agent_path}"
+daemon_user="root"
+
+. /etc/rc.d/rc.subr
+
+pexp="${{daemon}}.*${{daemon_flags}}"
+rc_reload=NO
+
+rc_cmd $1
+"""
+        rc_path = "/etc/rc.d/pixelos_agent"
+        try:
+            with open(rc_path, "w") as f:
+                f.write(rc_content)
+            os.chmod(rc_path, 0o755)
+            subprocess.run(["rcctl", "enable", "pixelos_agent"], timeout=10)
+            return {"status": "ok", "platform": "openbsd",
+                    "rc_path": rc_path}
+        except PermissionError:
+            return {"status": "error",
+                    "message": "Permission refusée: exécuter avec doas"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def autostart_remove(self) -> dict:
+        """Désenregistre l'autostart."""
+        platform = sys.platform
+        try:
+            if platform == "win32":
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Run",
+                    0, winreg.KEY_SET_VALUE)
+                winreg.DeleteValue(key, "PixelOSAgent")
+                winreg.CloseKey(key)
+                return {"status": "ok", "platform": "windows"}
+            elif platform in ("linux", "linux2"):
+                subprocess.run(["systemctl", "disable", "pixelos-agent"],
+                               timeout=10)
+                Path("/etc/systemd/system/pixelos-agent.service").unlink(missing_ok=True)
+                return {"status": "ok", "platform": "linux"}
+            elif "openbsd" in platform:
+                subprocess.run(["rcctl", "disable", "pixelos_agent"], timeout=10)
+                Path("/etc/rc.d/pixelos_agent").unlink(missing_ok=True)
+                return {"status": "ok", "platform": "openbsd"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def autostart_status(self) -> dict:
+        """Vérifie si l'autostart est installé."""
+        platform = sys.platform
+        try:
+            if platform == "win32":
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Run")
+                val, _ = winreg.QueryValueEx(key, "PixelOSAgent")
+                winreg.CloseKey(key)
+                return {"installed": True, "platform": "windows", "cmd": val}
+            elif platform in ("linux", "linux2"):
+                r = subprocess.run(
+                    ["systemctl", "is-enabled", "pixelos-agent"],
+                    capture_output=True, text=True, timeout=10)
+                enabled = r.stdout.strip() == "enabled"
+                return {"installed": enabled, "platform": "linux",
+                        "status": r.stdout.strip()}
+            elif "openbsd" in platform:
+                r = subprocess.run(
+                    ["rcctl", "check", "pixelos_agent"],
+                    capture_output=True, text=True, timeout=10)
+                return {"installed": r.returncode == 0, "platform": "openbsd"}
+            return {"installed": False, "platform": platform}
+        except FileNotFoundError:
+            return {"installed": False, "platform": platform}
+        except Exception as e:
+            return {"installed": False, "error": str(e)}
+
     def summary(self) -> str:
         """Return a human-readable table."""
         st = self.status()

@@ -49,6 +49,11 @@ class Agent:
 
     def start(self) -> None:
         log.info("Agent démarré", node=self.node_id, role=self.role)
+
+        # Démarrage automatique des services au boot
+        if self.node_id == "pixelos-server" or self.role == "server":
+            self._startup_services()
+
         self.mqtt.connect()
 
         # Souscription aux commandes
@@ -251,6 +256,29 @@ class Agent:
                     f"pixelos/agent/{self.node_id}/exec_result", {
                         "error": str(e),
                     })
+
+    def _startup_services(self) -> None:
+        """Démarre tous les services PixelOS au boot."""
+        try:
+            from core.services import ServiceManager
+            svc = ServiceManager()
+            log.info("Démarrage automatique des services PixelOS...")
+            result = svc.start()
+            status = svc.health()
+            log.info("Services démarrés",
+                     running=status["running"],
+                     total=status["total"])
+            # Envoyer heartbeat de boot
+            if hasattr(self, "mqtt") and self.mqtt:
+                self.mqtt.publish("pixelos/server/boot", {
+                    "node": self.node_id,
+                    "services": status,
+                    "ts": datetime.now().isoformat(),
+                })
+        except ImportError:
+            log.warning("ServiceManager non disponible")
+        except Exception as e:
+            log.error("Échec démarrage services", error=str(e))
 
     def _self_update(self) -> None:
         """Mise à jour de l'agent lui-même."""
