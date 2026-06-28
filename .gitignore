@@ -59,3 +59,4 @@ pixelos/models/
 
 # PixelOS logs
 pixelos/logs/
+pixelos/pixelos-agent.bat

@@ -323,13 +323,25 @@ class ServiceManager:
             return {"status": "error", "message": str(e)}
 
     def _autostart_windows(self, agent_path: str) -> dict:
-        """Install via Windows Task Scheduler or Run registry key."""
+        """Install via batch launcher + Windows Run registry key."""
         import winreg
+        # Créer un script batch launcher qui définit l'environnement
+        launcher = ROOT / "pixelos-agent.bat"
+        src_path = ROOT / "src"
+        launcher_content = f"""@echo off
+set PIXELOS_NODE_ID=pixelos-server
+set PIXELOS_ROLE=server
+set PYTHONPATH={src_path}
+"{sys.executable}" "{agent_path}" --boot
+"""
+        with open(launcher, "w") as f:
+            f.write(launcher_content)
+
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path,
                                  0, winreg.KEY_SET_VALUE)
-            cmd = f'"{sys.executable}" "{agent_path}"'
+            cmd = str(launcher)
             winreg.SetValueEx(key, "PixelOSAgent", 0,
                               winreg.REG_SZ, cmd)
             winreg.CloseKey(key)
@@ -348,7 +360,7 @@ After=network.target docker.service
 Wants=docker.service
 
 [Service]
-ExecStart={sys.executable} {agent_path}
+ExecStart={sys.executable} {agent_path} --boot
 Environment=PIXELOS_NODE_ID=pixelos-server
 Environment=PIXELOS_ROLE=server
 Environment=PYTHONPATH={ROOT / "src"}
@@ -380,7 +392,7 @@ WantedBy=multi-user.target
 # PixelOS Agent - /etc/rc.d/pixelos_agent
 #
 daemon="{sys.executable}"
-daemon_flags="{agent_path}"
+daemon_flags="{agent_path} --boot"
 daemon_user="root"
 
 . /etc/rc.d/rc.subr

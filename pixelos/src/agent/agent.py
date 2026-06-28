@@ -30,9 +30,10 @@ log = structlog.get_logger()
 class Agent:
     """Agent PixelOS déployé sur chaque nœud du système."""
 
-    def __init__(self, node_id: str, role: str):
+    def __init__(self, node_id: str, role: str, boot: bool = False):
         self.node_id = node_id
         self.role = role
+        self.boot = boot
         self.config = PixelOSConfig()
         self.mqtt = PixelOSMQTT(
             broker=self.config.get("mqtt.broker", "localhost"),
@@ -44,14 +45,19 @@ class Agent:
         signal.signal(signal.SIGTERM, self._stop)
         signal.signal(signal.SIGINT, self._stop)
 
+        # Auto-détection du rôle si non spécifié
+        if self.role == "unknown":
+            self._detect_role()
+
     def _stop(self, *args):
         self.running = False
 
     def start(self) -> None:
-        log.info("Agent démarré", node=self.node_id, role=self.role)
+        log.info("Agent démarré", node=self.node_id, role=self.role,
+                 boot=self.boot)
 
         # Démarrage automatique des services au boot
-        if self.node_id == "pixelos-server" or self.role == "server":
+        if self.boot or self.role == "server":
             self._startup_services()
 
         self.mqtt.connect()
@@ -280,6 +286,62 @@ class Agent:
         except Exception as e:
             log.error("Échec démarrage services", error=str(e))
 
+    def _detect_role(self) -> None:
+        """Détecte automatiquement le rôle du nœud courant."""
+        try:
+            # Serveur PixelOS : Docker, ports clés ou config indiquent le serveur
+            # 1. Docker est installé ?
+            r = subprocess.run(["docker", "info"],
+                               capture_output=True, text=True, timeout=5)
+            has_docker = r.returncode == 0
+        except:
+            has_docker = False
+
+        try:
+            # 2. Ports des services PixelOS accessibles en local ?
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            has_mysql = s.connect_ex(("127.0.0.1", 3306)) == 0
+            s.close()
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            has_mongo = s.connect_ex(("127.0.0.1", 27017)) == 0
+            s.close()
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            has_mqtt = s.connect_ex(("127.0.0.1", 1883)) == 0
+            s.close()
+        except:
+            has_mysql = has_mongo = has_mqtt = False
+
+        # 3. Fichier de configuration PixelOS avec nodes ?
+        has_config = False
+        try:
+            nodes = self.config.get("nodes", [])
+            has_config = len(nodes) > 0
+        except:
+            pass
+
+        # Logique de détection
+        if has_docker and (has_mysql or has_mongo or has_mqtt):
+            self.role = "server"
+            hostname = os.uname()[1] if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", "")
+            if hostname and self.node_id == hostname:
+                self.node_id = "pixelos-server"
+            log.info("Rôle auto-détecté", role="server",
+                     docker=has_docker, mysql=has_mysql,
+                     mongo=has_mongo, mqtt=has_mqtt)
+        elif has_config:
+            self.role = "gateway"
+            log.info("Rôle auto-détecté", role="gateway")
+        elif has_docker:
+            self.role = "server"
+            log.info("Rôle auto-détecté", role="server (docker)")
+        else:
+            self.role = "node"
+            log.info("Rôle auto-détecté", role="node")
+
     def _self_update(self) -> None:
         """Mise à jour de l'agent lui-même."""
         try:
@@ -292,8 +354,15 @@ class Agent:
 
 
 if __name__ == "__main__":
-    node_id = os.environ.get("PIXELOS_NODE_ID", os.uname()[1])
+    import argparse
+    parser = argparse.ArgumentParser(description="PixelOS Agent")
+    parser.add_argument("--boot", action="store_true",
+                        help="Mode boot: demarre tous les services au lancement")
+    args = parser.parse_args()
+
+    hostname = os.uname()[1] if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", "pixelos")
+    node_id = os.environ.get("PIXELOS_NODE_ID", hostname)
     role = os.environ.get("PIXELOS_ROLE", "unknown")
 
-    agent = Agent(node_id, role)
+    agent = Agent(node_id, role, boot=args.boot)
     agent.start()
