@@ -105,6 +105,73 @@ if HAS_FLASK:
         mqtt.publish(topic, {"cmd": command})
         return jsonify({"status": "sent", "topic": topic, "command": command})
 
+    @app.route("/api/zones")
+    def api_zones():
+        """Liste des zones."""
+        from core.provisioning import ZoneManager
+        zm = ZoneManager()
+        return jsonify(zm.list_zones())
+
+    @app.route("/api/scan", methods=["POST"])
+    def api_scan():
+        """Lance un scan Wi-Fi/BLE/RS485."""
+        from core.discovery import AggregateScanner
+        from core.provisioning import ZoneManager
+
+        timeout = request.get_json().get("timeout", 15) if request.is_json else 15
+        auto_register = request.get_json().get("auto_register", False) if request.is_json else False
+        zone = request.get_json().get("zone", "Auto-détecté") if request.is_json else "Auto-détecté"
+
+        scanner = AggregateScanner()
+        results = scanner.scan_all(timeout=timeout)
+
+        zm = ZoneManager()
+        new_nodes = zm.detect_new(results["total"])
+
+        registered = []
+        if auto_register and new_nodes:
+            res = zm.register_batch(new_nodes, zone)
+            registered = res["registered"]
+
+        return jsonify({
+            "wifi": results["wifi"],
+            "ble": results["ble"],
+            "rs485": results["rs485"],
+            "total": results["total"],
+            "new": new_nodes,
+            "registered": registered,
+            "count": {
+                "wifi": len(results["wifi"]),
+                "ble": len(results["ble"]),
+                "rs485": len(results["rs485"]),
+                "total": len(results["total"]),
+                "new": len(new_nodes),
+                "registered": len(registered),
+            }
+        })
+
+    @app.route("/api/zone/register", methods=["POST"])
+    def api_zone_register():
+        """Enregistre un nœud découvert dans une zone."""
+        from core.provisioning import ZoneManager
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+
+        zm = ZoneManager()
+        node_def = {
+            "id": data["id"],
+            "addr": data.get("addr", 0),
+            "type": data.get("type", "capteur_sol"),
+            "location": data.get("location", "Auto-détecté"),
+            "communication": data.get("communication", "wifi"),
+            "protocol": data.get("protocol", "auto"),
+            "sensors": data.get("sensors", {}),
+        }
+        ok = zm.register(node_def, data.get("location"))
+        return jsonify({"status": "ok" if ok else "exists", "node": node_def})
+
     @app.route("/api/config")
     def api_config():
         return jsonify(config.data)

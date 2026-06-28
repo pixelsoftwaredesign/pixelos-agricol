@@ -179,6 +179,148 @@ def cmd_backup(args):
         bk.restore(args.backup_id if args.backup_id != "latest" else None)
 
 
+def cmd_zone(args):
+    """Découverte et gestion des zones / capteurs."""
+    from core.discovery import AggregateScanner
+    from core.provisioning import ZoneManager
+    from core.config import PixelOSConfig
+
+    zm = ZoneManager()
+
+    if args.action == "list":
+        zones = zm.list_zones()
+        if not zones:
+            print("Aucune zone configurée")
+            return
+        print(f"{'Zone':<25} {'Nœuds':<8} {'Types'}")
+        print("-" * 60)
+        for z in zones:
+            types = ", ".join(set(n["type"] for n in z["nodes"]))
+            print(f"{z['location']:<25} {z['count']:<8} {types}")
+
+    elif args.action == "scan":
+        print("🔍 Scan en cours (Wi-Fi + BLE + RS485)...")
+        scanner = AggregateScanner()
+        results = scanner.scan_all(timeout=args.timeout or 30)
+        total = len(results["total"])
+
+        print(f"\n📡 Découvertes :")
+        print(f"   Wi-Fi : {len(results['wifi'])} appareils")
+        print(f"   BLE   : {len(results['ble'])} appareils")
+        print(f"   RS485 : {len(results['rs485'])} nœuds")
+        print(f"   Total : {total} capteurs détectés\n")
+
+        if total == 0:
+            print("   Aucun nouveau capteur PixelOS détecté")
+            print("   Vérifie que les ESP32 diffusent bien un beacon PIXELOS-...")
+            return
+
+        # Nouveaux vs existants
+        new_nodes = zm.detect_new(results["total"])
+        print(f"{'Adr/MAC':<20} {'Type':<12} {'Com':<8} {'Nom':<20} {'Status'}")
+        print("-" * 80)
+        for d in results["total"]:
+            node_id = d.get("nom") or f"{d['type']}_{d.get('addr', d.get('mac', '?'))}"
+            exists = node_id in config.nodes
+            status = "🟢 Exist" if exists else "🟡 Nouveau"
+            com = d.get("communication", d.get("source", "?"))
+            addr = str(d.get("addr", d.get("mac", d.get("rssi", "?"))))
+            print(f"{addr:<20} {d['type']:<12} {com:<8} {node_id:<20} {status}")
+
+        if new_nodes and not args.dry_run:
+            print(f"\n📝 {len(new_nodes)} nouveau(x) capteur(s) détecté(s)")
+            yn = input("   Enregistrer dans la config ? [Y/n] ").strip().lower()
+            if yn in ("", "y", "yes", "o", "oui"):
+                zone = args.zone or input("   Zone (location) : ").strip() or "Auto-détecté"
+                res = zm.register_batch(new_nodes, zone)
+                print(f"   ✅ {len(res['registered'])} enregistré(s)")
+                if res["errors"]:
+                    for e in res["errors"]:
+                        print(f"   ❌ {e['node']}: {e['error']}")
+
+    elif args.action == "detect":
+        print("⚡ Détection rapide des nouveaux capteurs...")
+        scanner = AggregateScanner()
+        results = scanner.scan_all(timeout=args.timeout or 15)
+        new_nodes = zm.detect_new(results["total"])
+
+        if not new_nodes:
+            print("   Aucun nouveau capteur détecté")
+            return
+
+        print(f"\n{'Nom':<20} {'Type':<12} {'Source':<8} {'Actions'}")
+        print("-" * 60)
+        for n in new_nodes:
+            print(f"{n['id']:<20} {n['type']:<12} {n['source']:<8} "
+                  f"→ pixelos zone register {n['id']}")
+
+    elif args.action == "register":
+        # Register a specific node by attributes
+        node_def = {
+            "id": args.name,
+            "addr": args.addr or 0,
+            "type": args.type or "capteur_sol",
+            "location": args.zone or args.location or "Auto-détecté",
+            "communication": args.com or "wifi",
+        }
+        ok = zm.register(node_def, args.zone)
+        print(f"{'✅' if ok else '❌'} Nœud {args.name} {'enregistré' if ok else 'déjà existant'}")
+
+    elif args.action == "assign":
+        ok = zm.assign_to_zone(args.node_id, args.zone)
+        print(f"{'✅' if ok else '❌'} Nœud {args.node_id} → {args.zone}")
+
+    elif args.action == "remove":
+        ok = zm.remove(args.node_id)
+        print(f"{'✅' if ok else '❌'} Nœud {args.node_id} retiré")
+
+    elif args.action == "auto":
+        """Mode auto : scan + enregistrement automatique."""
+        import time
+
+        print("🤖 Mode auto-provisioning actif (Ctrl+C pour arrêter)")
+        scanner = AggregateScanner()
+        zm = ZoneManager()
+        interval = args.interval or 60
+
+        try:
+            while True:
+                results = scanner.scan_all(timeout=max(10, interval // 2))
+                new_nodes = zm.detect_new(results["total"])
+
+                if new_nodes:
+                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] "
+                          f"{len(new_nodes)} nouveau(x) capteur(s) !")
+                    res = zm.register_batch(new_nodes, args.zone or "Auto-provisioning")
+                    print(f"   ✅ {len(res['registered'])} enregistré(s)")
+                else:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                          f"Scan: {len(results['total'])} appareils, 0 nouveau")
+
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            print("\n⏹️  Auto-provisioning arrêté")
+
+    elif args.action == "beacon":
+        """Diffuse un beacon BLE depuis le serveur (test)."""
+        from core.discovery import DiscoveryProtocol
+        ssid = DiscoveryProtocol.make_wifi_ap(args.type or "SOL", args.name or "test")
+        print(f"📡 SSID beacon : {ssid}")
+        print(f"📡 BLE UUID    : {DiscoveryProtocol.PIXELOS_BLE_UUID}")
+
+        # Créer un AP Wi-Fi temporaire
+        if args.create_ap:
+            import subprocess
+            try:
+                subprocess.run([
+                    "nmcli", "device", "wifi", "hotspot",
+                    "ssid", ssid, "password", "pixelos2026"
+                ], timeout=10)
+                print(f"✅ Point d'accès créé: {ssid}")
+            except Exception as e:
+                print(f"❌ Échec création AP: {e}")
+
+
 def cmd_config(args):
     """Gestion de la configuration."""
     if args.action == "show":
@@ -293,6 +435,25 @@ def main():
     p.add_argument("action", choices=["create", "list", "restore"], nargs="?")
     p.add_argument("backup_id", nargs="?")
     p.set_defaults(func=cmd_backup)
+
+    # zone
+    p = sub.add_parser("zone", help="Découverte et gestion des zones/capteurs")
+    p.add_argument("action", choices=["list", "scan", "detect", "register",
+                                      "assign", "remove", "auto", "beacon"])
+    p.add_argument("--zone", "-z", help="Nom de zone (location)")
+    p.add_argument("--name", "-n", help="Nom du nœud")
+    p.add_argument("--type", "-t", help="Type (sol, vanne, meteo, debit, pir)")
+    p.add_argument("--addr", "-a", type=int, help="Adresse Modbus")
+    p.add_argument("--com", "-c", help="Communication (wifi, ble, rs485)")
+    p.add_argument("--node-id", help="ID du nœud")
+    p.add_argument("--timeout", type=int, default=15, help="Timeout scan (s)")
+    p.add_argument("--interval", type=int, default=60,
+                   help="Intervalle auto-provisioning (s)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Scan sans enregistrer")
+    p.add_argument("--create-ap", action="store_true",
+                   help="Créer un point d'accès Wi-Fi beacon")
+    p.set_defaults(func=cmd_zone)
 
     # config
     p = sub.add_parser("config", help="Configuration")
