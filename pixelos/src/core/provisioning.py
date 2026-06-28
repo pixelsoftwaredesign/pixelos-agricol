@@ -19,13 +19,19 @@ class ZoneManager:
     """Gestion des zones et auto-enregistrement des capteurs."""
 
     TYPE_MAP = {
-        "sol":    {"type": "capteur_sol",    "icon": "🌱", "default_poll": 10},
-        "vanne":  {"type": "vanne",          "icon": "💧", "default_poll": 5},
-        "meteo":  {"type": "meteo",          "icon": "🌤️", "default_poll": 30},
-        "debit":  {"type": "debitmetre",     "icon": "📊", "default_poll": 5},
-        "pir":    {"type": "pir",            "icon": "🚨", "default_poll": 2},
-        "pompe":  {"type": "pompe",          "icon": "⚡", "default_poll": 5},
+        "sol":         {"type": "capteur_sol", "icon": "🌱", "default_poll": 10},
+        "capteur_sol": {"type": "capteur_sol", "icon": "🌱", "default_poll": 10},
+        "vanne":       {"type": "vanne",       "icon": "💧", "default_poll": 5},
+        "meteo":       {"type": "meteo",       "icon": "🌤️", "default_poll": 30},
+        "debit":       {"type": "debitmetre",  "icon": "📊", "default_poll": 5},
+        "debitmetre":  {"type": "debitmetre",  "icon": "📊", "default_poll": 5},
+        "pir":         {"type": "pir",         "icon": "🚨", "default_poll": 2},
+        "pompe":       {"type": "pompe",       "icon": "⚡", "default_poll": 5},
+        "gateway":     {"type": "gateway",     "icon": "📡", "default_poll": 5},
     }
+
+    def _type_info(self, type_name: str) -> dict:
+        return self.TYPE_MAP.get(type_name, {"type": type_name, "icon": "📡", "default_poll": 10})
 
     def __init__(self, config_path: Optional[str] = None):
         if config_path:
@@ -52,7 +58,7 @@ class ZoneManager:
                     "count": 0,
                     "nodes": [],
                 }
-            type_info = self.TYPE_MAP.get(n["type"], {"icon": "📡"})
+            type_info = self._type_info(n["type"])
             zones[loc]["count"] += 1
             zones[loc]["nodes"].append({
                 "id": n["id"],

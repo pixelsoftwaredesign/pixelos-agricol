@@ -321,6 +321,12 @@ def cmd_zone(args):
                 print(f"❌ Échec création AP: {e}")
 
 
+def cmd_predict(args):
+    """Moteur de prédiction IA."""
+    from core.predictor import PredictorCLI
+    PredictorCLI.handle(args)
+
+
 def cmd_config(args):
     """Gestion de la configuration."""
     if args.action == "show":
@@ -435,6 +441,18 @@ def main():
     p.add_argument("action", choices=["create", "list", "restore"], nargs="?")
     p.add_argument("backup_id", nargs="?")
     p.set_defaults(func=cmd_backup)
+
+    # predict
+    p = sub.add_parser("predict", help="Prédiction IA (irrigation, anomalies)")
+    p.add_argument("action", choices=["train", "predict", "stats", "anomaly"])
+    p.add_argument("--days", type=int, default=30, help="Jours d'historique")
+    p.add_argument("--zone", default="sol_serre", help="Zone à entraîner")
+    p.add_argument("--humidity", type=float, help="Humidité sol actuelle")
+    p.add_argument("--temp", type=float, help="Température actuelle")
+    p.add_argument("--hum", type=float, help="Humidité air actuelle")
+    p.add_argument("--pression", type=float, help="Pression atmosphérique")
+    p.add_argument("--debit", type=float, help="Débit actuel L/min")
+    p.set_defaults(func=cmd_predict)
 
     # zone
     p = sub.add_parser("zone", help="Découverte et gestion des zones/capteurs")

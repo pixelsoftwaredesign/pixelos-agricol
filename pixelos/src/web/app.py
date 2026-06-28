@@ -45,7 +45,12 @@ if HAS_FLASK:
                 "type": n["type"],
                 "location": n.get("location", ""),
                 "addr": n["addr"],
-                "online": True,  # TODO: heartbeat
+                "online": True,
+                "icon": {
+                    "capteur_sol": "🌱", "vanne": "💧", "meteo": "🌤️",
+                    "debitmetre": "📊", "pir": "🚨", "pompe": "⚡",
+                    "gateway": "📡",
+                }.get(n["type"], "📡"),
             })
 
         return jsonify({
@@ -171,6 +176,42 @@ if HAS_FLASK:
         }
         ok = zm.register(node_def, data.get("location"))
         return jsonify({"status": "ok" if ok else "exists", "node": node_def})
+
+    @app.route("/api/predict/train", methods=["POST"])
+    def api_predict_train():
+        from core.predictor import PredictorEngine
+        data = request.get_json() or {}
+        engine = PredictorEngine()
+        result = engine.train(days=data.get("days", 30),
+                              zone=data.get("zone", "sol_serre"))
+        return jsonify(result)
+
+    @app.route("/api/predict/now")
+    def api_predict_now():
+        from core.predictor import PredictorEngine
+        engine = PredictorEngine()
+        data = {
+            "humidite_sol": request.args.get("humidity", 45, type=float),
+            "temperature": request.args.get("temp", 20, type=float),
+            "humidite": request.args.get("hum", 50, type=float),
+            "pression": request.args.get("pression", 1013, type=float),
+        }
+        result = engine.predict(data)
+        return jsonify(result)
+
+    @app.route("/api/predict/stats")
+    def api_predict_stats():
+        from core.predictor import PredictorEngine
+        engine = PredictorEngine()
+        return jsonify(engine.stats())
+
+    @app.route("/api/predict/anomalies", methods=["POST"])
+    def api_predict_anomalies():
+        from core.predictor import PredictorEngine
+        engine = PredictorEngine()
+        data = request.get_json() or {}
+        anomalies = engine.detect_anomalies(data)
+        return jsonify(anomalies)
 
     @app.route("/api/config")
     def api_config():
