@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Services{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span class="section-title" style="margin:0">Gestion des services</span>
+  <button class="btn-green" onclick="serviceAction('all','start')">Tout demarrer</button>
+  <button class="btn-red" onclick="serviceAction('all','stop')">Tout arreter</button>
+  <button class="btn-orange" onclick="loadServices()">Actualiser</button>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Service</th><th>Type</th><th>Port</th><th>Statut</th><th>Actions</th>
+  </tr></thead>
+  <tbody id="servicesTable"></tbody>
+</table>
+
+<div id="serviceLogs" style="display:none;margin-top:20px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span class="section-title" style="margin:0">Logs: <span id="logServiceName"></span></span>
+    <button class="btn-orange" onclick="document.getElementById('serviceLogs').style.display='none'">Fermer</button>
+  </div>
+  <pre id="logContent" style="background:#000;color:#0f0;padding:16px;border-radius:8px;font-size:12px;max-height:400px;overflow:auto;white-space:pre-wrap;font-family:monospace"></pre>
+</div>
+
+<script>
+async function loadServices() {
+  const r = await fetch('/api/services');
+  const services = await r.json();
+  const tbody = document.getElementById('servicesTable');
+  tbody.innerHTML = '';
+  services.forEach(s => {
+    const tr = document.createElement('tr');
+    const statusClass = s.running ? 'running' : 'stopped';
+    tr.innerHTML = `
+      <td><strong>${s.name}</strong></td>
+      <td>${s.type}</td>
+      <td>${s.port}</td>
+      <td><span class="badge ${statusClass}">${s.status}</span></td>
+      <td>
+        <button class="btn-green" style="padding:2px 8px;font-size:12px" onclick="serviceAction('${s.id}','start')">Démarrer</button>
+        <button class="btn-red" style="padding:2px 8px;font-size:12px" onclick="serviceAction('${s.id}','stop')">Arrêter</button>
+        <button class="btn-blue" style="padding:2px 8px;font-size:12px" onclick="serviceAction('${s.id}','restart')">Redémarrer</button>
+        <button style="padding:2px 8px;font-size:12px;background:var(--border);color:var(--text)" onclick="showLogs('${s.id}')">Logs</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function serviceAction(name, action) {
+  if (!confirm(action + ' ' + name + ' ?')) return;
+  try {
+    await fetch('/api/services/' + name + '/' + action, {method:'POST'});
+    setTimeout(loadServices, 2000);
+  } catch(e) { alert('Erreur: ' + e); }
+}
+
+async function showLogs(name) {
+  document.getElementById('serviceLogs').style.display = 'block';
+  document.getElementById('logServiceName').textContent = name;
+  document.getElementById('logContent').textContent = 'Chargement...';
+  const r = await fetch('/api/services/' + name + '/logs?tail=50', {method:'POST'});
+  const text = await r.text();
+  document.getElementById('logContent').textContent = text;
+}
+
+loadServices();
+setInterval(loadServices, 10000);
+</script>
+{% endblock %}

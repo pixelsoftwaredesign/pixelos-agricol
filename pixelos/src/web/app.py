@@ -35,6 +35,18 @@ if HAS_FLASK:
     def index():
         return render_template("index.html", title="PixelOS - AgriCol")
 
+    @app.route("/plantes")
+    def plantes_page():
+        return render_template("plantes.html", title="Base Plantes")
+
+    @app.route("/services")
+    def services_page():
+        return render_template("services.html", title="Services")
+
+    @app.route("/streamlit")
+    def streamlit_page():
+        return render_template("streamlit.html", title="Dashboard Streamlit")
+
     @app.route("/api/status")
     def api_status():
         """État complet du système en JSON."""
@@ -259,8 +271,8 @@ if HAS_FLASK:
         variete = request.args.get("variete")
         return jsonify(db.get_calendrier(variete))
 
-    @app.route("/api/irrigation")
-    def api_irrigation():
+    @app.route("/api/irrigation-plantes")
+    def api_irrigation_plantes():
         from core.plantes_db import PlantesDB
         db = PlantesDB()
         variete = request.args.get("variete")
