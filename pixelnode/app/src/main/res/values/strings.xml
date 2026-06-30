@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PixelNode</string>
+    <string name="node_running">Nœud Pixel OS actif</string>
+    <string name="node_stopped">Nœud arrêté</string>
+    <string name="start_node">Démarrer le nœud</string>
+    <string name="stop_node">Arrêter le nœud</string>
+    <string name="peers_connected">Pairs connectés</string>
+    <string name="blocks_synced">Blocs synchronisés</string>
+    <string name="uptime">Temps d\'activité</string>
+</resources>
