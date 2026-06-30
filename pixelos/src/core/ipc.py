@@ -39,6 +39,11 @@ MSG_TYPE_EVENT = "event"
 MSG_TYPE_REGISTER = "register"
 MSG_TYPE_ALERT = "alert"
 
+PRIORITY_LOW = 0
+PRIORITY_NORMAL = 1
+PRIORITY_HIGH = 2
+PRIORITY_CRITICAL = 3
+
 MODULE_STATUSES = {
     "INIT": "initialisation",
     "RUNNING": "en fonctionnement",
@@ -57,7 +62,8 @@ class Message:
     """Message normalisé échangé sur le bus IPC."""
 
     def __init__(self, msg_type: str, source: str, target: str = "",
-                 payload: dict = None, msg_id: str = ""):
+                 payload: dict = None, msg_id: str = "",
+                 priority: int = PRIORITY_NORMAL):
         self.msg_id = msg_id or hashlib.sha256(
             f"{source}{time.time()}{os.urandom(4).hex()}".encode()
         ).hexdigest()[:16]
@@ -65,6 +71,7 @@ class Message:
         self.source = source
         self.target = target
         self.payload = payload or {}
+        self.priority = max(PRIORITY_LOW, min(PRIORITY_CRITICAL, priority))
         self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict:
@@ -74,6 +81,7 @@ class Message:
             "source": self.source,
             "target": self.target,
             "payload": self.payload,
+            "priority": self.priority,
             "timestamp": self.timestamp,
         }
 
@@ -85,6 +93,7 @@ class Message:
             target=data.get("target", ""),
             payload=data.get("payload", {}),
             msg_id=data.get("msg_id", ""),
+            priority=data.get("priority", PRIORITY_NORMAL),
         )
 
     def serialize(self) -> bytes:
@@ -100,6 +109,7 @@ class Message:
             source=self.target or "bus",
             target=self.source,
             payload=payload,
+            priority=self.priority,
         )
 
 
@@ -226,11 +236,11 @@ class MessageBus:
                 self.modules[msg.source]["status"] = msg.payload.get("status", "RUNNING")
 
         elif msg.type == MSG_TYPE_REQUEST:
-            self._pending.append(msg)
+            self._insert_pending(msg)
             self._trigger_callbacks("request", msg)
 
         elif msg.type == MSG_TYPE_COMMAND:
-            self._pending.append(msg)
+            self._insert_pending(msg)
             self._trigger_callbacks("command", msg)
 
         elif msg.type == MSG_TYPE_EVENT:
@@ -254,9 +264,16 @@ class MessageBus:
 
     # ── API pour les modules ─────────────────────────────
 
+    def _insert_pending(self, msg: Message):
+        """Insère dans _pending par ordre de priorité (desc)."""
+        i = 0
+        while i < len(self._pending) and self._pending[i].priority >= msg.priority:
+            i += 1
+        self._pending.insert(i, msg)
+
     def publish(self, msg: Message):
         """Publie un message sur le bus."""
-        self._pending.append(msg)
+        self._insert_pending(msg)
         self._trigger_callbacks(msg.type, msg)
 
     def subscribe(self, event: str, callback: Callable):
@@ -265,14 +282,15 @@ class MessageBus:
             self._callbacks[event] = []
         self._callbacks[event].append(callback)
 
-    def send_command(self, target: str, command: str, params: dict = None) -> bool:
-        """Envoie une commande à un module spécifique."""
+    def send_command(self, target: str, command: str, params: dict = None,
+                     priority: int = PRIORITY_NORMAL) -> bool:
+        """Envoie une commande à un module spécifique avec niveau de priorité."""
         if target not in self._module_connections:
             return False
         msg = Message(MSG_TYPE_COMMAND, "bus", target, {
             "command": command,
             "params": params or {},
-        })
+        }, priority=priority)
         try:
             self._module_connections[target].sendall(msg.serialize() + b"\n")
             return True

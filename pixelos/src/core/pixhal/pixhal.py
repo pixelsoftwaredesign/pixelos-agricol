@@ -12,9 +12,11 @@ import json
 import glob
 import re
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from math import sqrt
 
 
 HAL_DIR = "/var/db/pixelos/pixhal"
@@ -42,6 +44,12 @@ ACTUATOR_DB = {
     "Valve": {"type": "valve", "protocol": "gpio"},
     "Pump": {"type": "pump", "protocol": "gpio"},
     "Fan": {"type": "fan", "protocol": "gpio"},
+}
+
+# Profils de drones supportés (MAVLink / Pixhawk / simulation)
+DRONE_PROFILES = {
+    "pixhawk": {"protocol": "mavlink", "baud": 115200, "device": "/dev/ttyACM0"},
+    "simulated": {"protocol": "simulated", "baud": 0, "device": ""},
 }
 
 
@@ -252,6 +260,76 @@ print(data)"""], capture_output=True, text=True, timeout=5)
             return {"status": "simulated", "actuator_id": actuator_id, "state": state}
         except Exception as e:
             return {"status": "error", "reason": str(e)}
+
+    # ── Drone / Vol ───────────────────────────────────────
+
+    def detect_drone(self) -> dict:
+        """Détecte un contrôleur de vol (Pixhawk / simulation)."""
+        for name, profile in DRONE_PROFILES.items():
+            if profile["protocol"] == "mavlink":
+                dev = profile["device"]
+                if os.path.exists(dev):
+                    return {"status": "ok", "profile": name, **profile}
+            if name == "simulated":
+                return {"status": "simulated", "profile": "simulated"}
+        return {"status": "not_found"}
+
+    def flight_arm(self) -> dict:
+        return {"status": "simulated", "command": "arm", "profile": "simulated"}
+
+    def flight_disarm(self) -> dict:
+        return {"status": "simulated", "command": "disarm", "profile": "simulated"}
+
+    def flight_takeoff(self, altitude: float) -> dict:
+        if altitude < 0.5 or altitude > 120:
+            return {"status": "error", "reason": "altitude hors limites (0.5-120m)"}
+        return {
+            "status": "simulated",
+            "command": "takeoff",
+            "altitude": altitude,
+            "profile": "simulated",
+        }
+
+    def flight_land(self) -> dict:
+        return {"status": "simulated", "command": "land", "profile": "simulated"}
+
+    def flight_goto(self, lat: float, lon: float, alt: float = None) -> dict:
+        payload = {"lat": lat, "lon": lon}
+        if alt is not None:
+            payload["altitude"] = alt
+        return {
+            "status": "simulated",
+            "command": "goto",
+            **payload,
+            "profile": "simulated",
+        }
+
+    def flight_rc_override(self, channels: dict) -> dict:
+        return {
+            "status": "simulated",
+            "command": "rc_override",
+            "channels": channels,
+            "profile": "simulated",
+        }
+
+    # ── Motor control (robots terrestres) ─────────────────
+
+    def motor_speed(self, motor_id: str, speed: int) -> dict:
+        """Contrôle vitesse d'un moteur (PWM 0-255)."""
+        speed = max(0, min(255, speed))
+        actuator = self.actuators.get(motor_id)
+        if actuator and actuator.get("protocol") == "gpio":
+            pin = actuator.get("pin", 0)
+            try:
+                gpio_path = f"{GPIO_BASE}/gpio{pin}"
+                if not os.path.exists(gpio_path):
+                    Path(f"{GPIO_BASE}/export").write_text(str(pin))
+                Path(f"{gpio_path}/direction").write_text("out")
+                Path(f"{gpio_path}/value").write_text(str(1 if speed > 0 else 0))
+                return {"status": "ok", "motor_id": motor_id, "speed": speed}
+            except Exception as e:
+                return {"status": "error", "reason": str(e)}
+        return {"status": "simulated", "motor_id": motor_id, "speed": speed}
 
     # ── List ──────────────────────────────────────────────
 

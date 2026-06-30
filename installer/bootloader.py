@@ -29,6 +29,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pixelos", "src"))
+
 PIXOS_DISCOVER_PORT = 8337
 PIXOS_DISCOVER_MAGIC = b"PIXOS_DISCOVER_V1"
 PIXOS_ANSWER_MAGIC = b"PIXOS_ANSWER_V1"
@@ -83,6 +85,13 @@ def hardware_id() -> str:
 
     raw = "-".join(parts) or socket.gethostname()
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def orch_ip_from_url(url: str) -> str:
+    """Extrait l'IP d'une URL d'orchestrateur."""
+    url = url.replace("http://", "").replace("https://", "")
+    host = url.split(":")[0]
+    return host
 
 
 def is_already_configured() -> bool:
@@ -168,13 +177,37 @@ def discover_orchestrator(timeout: float = 60.0) -> str:
 
 # ── Phase 2 : Demande de configuration HTTP ──────────────
 
+def _pixkey_auth() -> dict:
+    """Tente une authentification via PixKey (YubiKey / token / recovery)."""
+    try:
+        from core.pixkey.pixkey import PixKey
+        pk = PixKey()
+
+        # YubiKey d'abord
+        if pk.yubikey_available:
+            result = pk.authenticate("yubikey")
+            if result.get("authenticated"):
+                return {"method": "yubikey", "token": result.get("info", "yubikey")[:64]}
+
+        # Token ensuite
+        for t in pk.keys.get("tokens", []):
+            result = pk.authenticate("token", token=t["id"])
+            if result.get("authenticated"):
+                return {"method": "token", "token": t["id"]}
+
+        return {"method": "none", "token": ""}
+    except Exception:
+        return {"method": "none", "token": ""}
+
+
 def join_orchestrator(orch_url: str) -> dict:
     """
-    Envoie une requête de join à l'Orchestrateur.
+    Envoie une requête de join à l'Orchestrateur avec authentification PixKey.
     Retourne la configuration attribuée (node_id, ip, pixnet_key, ...).
     """
     hw_id = hardware_id()
     hostname = socket.gethostname()
+    auth = _pixkey_auth()
     join_payload = {
         "hw_id": hw_id,
         "hostname": hostname,
@@ -182,6 +215,7 @@ def join_orchestrator(orch_url: str) -> dict:
         "arch": platform.machine(),
         "os": platform.system(),
         "python_version": sys.version.split()[0],
+        "pixkey_auth": auth,
     }
 
     try:
@@ -350,6 +384,22 @@ def run(force: bool = False) -> dict:
     log(f"Platform: {platform.system()} {platform.machine()}")
     log(f"Python: {sys.version.split()[0]}")
 
+    # Phase 0 : Vérification d'intégrité au démarrage
+    log("Phase 0/5: Boot integrity check")
+    try:
+        from core.security.boot_integrity import check_boot_integrity, find_project_root
+        integrity = check_boot_integrity(find_project_root())
+        if not integrity["passed"]:
+            log(f"INTEGRITY FAILED: {integrity.get('error', 'hash mismatch')}")
+            log("WARNING: Continuing in degraded mode (signature mismatch)")
+            state["integrity_warning"] = True
+        else:
+            log(f"Integrity OK ({integrity['total_expected']} files)")
+            state["integrity_warning"] = False
+        save_state(state)
+    except Exception as e:
+        log(f"Integrity check skipped: {e}")
+
     try:
         # Phase 1 : Découverte
         log("Phase 1/4: Network discovery")
@@ -370,8 +420,18 @@ def run(force: bool = False) -> dict:
         log("Phase 3/4: Applying configuration")
         full_config = apply_config(config)
 
+        # Phase 3b : Application des règles de pare-feu robot
+        log("Phase 3b/5: Applying robot firewall rules")
+        try:
+            from core.security.robot_firewall import RobotFirewall
+            fw = RobotFirewall(orch_ip=orch_ip_from_url(orch_url))
+            fw_result = fw.apply()
+            log(f"Firewall: {fw_result['status']}")
+        except Exception as e:
+            log(f"Firewall skipped: {e}")
+
         # Phase 4 : Confirmation
-        log("Phase 4/4: Registration & confirmation")
+        log("Phase 4/5: Registration & confirmation")
         register_with_ipc(node_id)
         confirm_join(orch_url, node_id)
 

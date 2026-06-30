@@ -2,11 +2,13 @@ from .base import RobotNode, RobotMission, MISSION_STATUS
 from .inspecteur import RobotInspecteur
 from .transporteur import RobotTransporteur
 from .recolteur import RobotRecolteur
+from .drone import DronePilot
 
 ROBOT_ROLES = {
     "inspecteur": RobotInspecteur,
     "transporteur": RobotTransporteur,
     "recolteur": RobotRecolteur,
+    "drone": DronePilot,
 }
 
 def create_robot(role: str, name: str = "") -> RobotNode:

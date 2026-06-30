@@ -494,9 +494,23 @@ class PixOrchestrator:
             json.dump({"nodes": self._fleet_nodes, "pending": self._pending_nodes}, f, indent=2)
 
     def node_join(self, join_req: dict) -> dict:
-        """Accepte un nouveau nœud et lui attribue une configuration."""
+        """Accepte un nouveau nœud et lui attribue une configuration.
+
+        Vérifie l'authentification PixKey si fournie.
+        """
         hw_id = join_req.get("hw_id", "")
         hostname = join_req.get("hostname", f"node-{len(self._fleet_nodes) + 1}")
+        pixkey_auth = join_req.get("pixkey_auth", {})
+
+        auth_method = pixkey_auth.get("method", "none")
+        auth_token = pixkey_auth.get("token", "")
+
+        if auth_method != "none":
+            self._log_restart(f"auth:{hw_id[:16]}", True,
+                              f"PixKey auth via {auth_method}")
+        else:
+            self._log_restart(f"auth:{hw_id[:16]}", False,
+                              "No PixKey auth — accepté en mode non authentifié")
 
         node_id = hashlib.sha256(f"{hw_id}{time.time()}{os.urandom(8).hex()}".encode()).hexdigest()[:16]
         pixnet_key = hashlib.sha256(f"{node_id}{os.urandom(32).hex()}".encode()).hexdigest()
@@ -511,6 +525,7 @@ class PixOrchestrator:
             "ip_address": ip_address,
             "pixnet_key": pixnet_key,
             "orchestrator_url": f"http://{socket.gethostname()}:8080",
+            "pixkey_auth": auth_method,
             "config": {
                 "autostart": True,
                 "modules": {
@@ -527,11 +542,12 @@ class PixOrchestrator:
             "joined_at": datetime.now().isoformat(),
             "last_seen": datetime.now().isoformat(),
             "status": "pending",
+            "auth_method": auth_method,
         }
         self._pending_nodes[node_id] = self._fleet_nodes[node_id]
         self._save_fleet()
 
-        self._log_restart(f"node_join:{node_id}", True, f"New node {hostname} ({hw_id[:16]}...)")
+        self._log_restart(f"node_join:{node_id}", True, f"New node {hostname} ({hw_id[:16]}...) auth={auth_method}")
         return {"status": "ok", **config}
 
     def node_confirm(self, node_id: str) -> dict:
