@@ -38,7 +38,7 @@ class TrafficController:
         self._robots: dict[str, dict] = {}
         self._zones: dict[str, tuple] = {}
         self._hold_map: dict[str, str] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._stop = threading.Event()
         self._log = []
 

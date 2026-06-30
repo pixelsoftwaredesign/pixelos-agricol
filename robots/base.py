@@ -43,6 +43,7 @@ MISSION_STATUS = {
     "SAFE_RETURN": "Retour au safe point",
     "BATTERY_LOW": "Batterie faible",
     "LOST_CONNECTION": "Connexion perdue",
+    "YIELDING": "Cède le passage",
 }
 
 MISSION_TIMEOUT = 600
@@ -131,6 +132,12 @@ class RobotNode(PixModule):
         self._connection_ok = True
         self._mission_thread: Optional[threading.Thread] = None
 
+        # ── Yield Protocol ────────────────────────────────
+        self._yielding_to: str = ""
+        self._yield_reason: str = ""
+        self._yielded_at: float = 0.0
+        self._priority_abuse_count: int = 0
+
         Path(ROBOT_DIR).mkdir(parents=True, exist_ok=True)
         self.register({"role": role, "hw_version": hw_version,
                        "hardware_id": self._hardware_id()})
@@ -204,6 +211,13 @@ class RobotNode(PixModule):
                     self._save_safe_return(*coords)
                 elif cmd == "STATUS":
                     self._publish_status()
+                # ── Yield Protocol ─────────────────────
+                elif cmd == "STOP_AND_YIELD":
+                    authority = payload.get("params", {}).get("authority", "")
+                    reason = payload.get("params", {}).get("reason", "priority")
+                    self._yield_to(authority, reason)
+                elif cmd == "RESUME":
+                    self._resume()
         self.bus.subscribe("command", handler)
 
     # ── Boucle de mission ────────────────────────────────
@@ -283,6 +297,59 @@ class RobotNode(PixModule):
 
     def set_safe_return(self, lat: float, lon: float):
         self._save_safe_return(lat, lon)
+
+    # ── Yield Protocol ────────────────────────────────────
+
+    def is_yielding(self) -> bool:
+        return self._yielding_to != ""
+
+    def _yield_to(self, authority: str, reason: str = "priority"):
+        """Arrête le robot et cède le passage à un robot prioritaire.
+
+        Protocole:
+          1. Publie ACK_YIELD sur le bus (audit PixStat)
+          2. Stop event pour interrompre la mission en cours
+          3. Sauvegarde l'autorité, la raison et l'horodatage
+        """
+        self._yielding_to = authority
+        self._yield_reason = reason
+        self._yielded_at = time.time()
+
+        if self.mission.status in ("EXECUTING", "MISSION_START"):
+            self._stop.set()
+        self.mission.status = "YIELDING"
+        self.mission.add_step("yield", "warning", f"Cède le passage à {authority} ({reason})")
+
+        self.bus.publish(Message("event", self.name, "pixstat", {
+            "event": "ACK_YIELD",
+            "authority": authority,
+            "reason": reason,
+            "role": self.role,
+            "yielded_at": datetime.now(timezone.utc).isoformat(),
+        }))
+        self._publish_event("ACK_YIELD", {"authority": authority, "reason": reason})
+
+    def _resume(self):
+        """Autorité levée → le robot reprend son activité."""
+        self._yielding_to = ""
+        self._yield_reason = ""
+        self._yielded_at = 0.0
+
+        if self.mission.status == "YIELDING":
+            self._stop.clear()
+            self.mission.status = "IDLE"
+            self.mission.add_step("resume", "info", "Reprise après yield")
+
+        self._publish_event("ACK_RESUME", {})
+
+    def report_yield_state(self) -> dict:
+        return {
+            "yielding": self.is_yielding(),
+            "yielding_to": self._yielding_to,
+            "yield_reason": self._yield_reason,
+            "yielded_at": self._yielded_at,
+            "priority_abuse_count": self._priority_abuse_count,
+        }
 
     # ── Abort ─────────────────────────────────────────────
 
@@ -400,9 +467,10 @@ class RobotNode(PixModule):
     def handle_request(self, msg) -> dict:
         cmd = msg.payload.get("command", "")
         if cmd == "stats":
-            return self.stats()
+            return {**self.stats(), "yield": self.report_yield_state()}
         if cmd == "status":
-            return {"status": self.mission.status, "battery": self._battery_level}
+            return {"status": self.mission.status, "battery": self._battery_level,
+                    "yielding": self.is_yielding()}
         if cmd == "safe_return":
             return {"coords": list(self._safe_return_coords)}
         if cmd == "set_safe_return":
@@ -411,6 +479,11 @@ class RobotNode(PixModule):
             lon = params.get("lon", 0.0)
             self.set_safe_return(lat, lon)
             return {"status": "ok", "coords": [lat, lon]}
+        if cmd == "yield_state":
+            return self.report_yield_state()
+        if cmd == "clear_abuse":
+            self._priority_abuse_count = 0
+            return {"status": "ok"}
         return super().handle_request(msg)
 
 

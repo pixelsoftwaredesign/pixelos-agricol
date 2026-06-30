@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, render_template
-from .orchestrator import PixOrchestrator
+from .orchestrator_class import PixOrchestrator
 
 orch_bp = Blueprint("orchestrator", __name__, url_prefix="/api/orchestrator")
 _orch = PixOrchestrator()
