@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PixSwarm – Orchestrateur d'Essaim</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0e17; color: #c8d6e5; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .header {
+            background: linear-gradient(135deg, #0f1729, #1a2340);
+            border-bottom: 1px solid #22d3ee33;
+            padding: 20px 30px;
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        }
+        .header h1 { font-size: 1.5rem; color: #22d3ee; font-weight: 600; letter-spacing: 0.5px; }
+        .header .badge {
+            background: #22d3ee22; color: #22d3ee; padding: 2px 12px;
+            border-radius: 12px; font-size: 0.8rem; border: 1px solid #22d3ee44;
+        }
+        .header .badge.emergency { background: #ef444422; color: #ef4444; border-color: #ef444444; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .card {
+            background: #111827; border-radius: 12px; border: 1px solid #1e293b;
+            padding: 20px; overflow: hidden;
+        }
+        .card.full { grid-column: 1 / -1; }
+        .card h2 { font-size: 1rem; color: #22d3ee; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card h2::before { content: ''; width: 4px; height: 16px; background: #22d3ee; border-radius: 2px; display: inline-block; }
+        .card h2 .ctrl { margin-left: auto; display: flex; gap: 6px; }
+        .stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .stat {
+            flex: 1; min-width: 100px; background: #0f1729; border-radius: 8px;
+            padding: 14px; text-align: center; border: 1px solid #1e293b;
+        }
+        .stat .value { font-size: 1.8rem; font-weight: 700; color: #22d3ee; }
+        .stat .label { font-size: 0.75rem; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat .value.leader { color: #f59e0b; }
+        .stat .value.emergency { color: #ef4444; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; padding: 10px 8px; color: #64748b; font-weight: 500; border-bottom: 1px solid #1e293b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; }
+        td { padding: 10px 8px; border-bottom: 1px solid #1e293b11; }
+        .tag {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 0.7rem; font-weight: 600;
+        }
+        .tag.leader { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
+        .tag.member { background: #22d3ee22; color: #22d3ee; border: 1px solid #22d3ee44; }
+        .tag.drone { background: #8b5cf622; color: #8b5cf6; border: 1px solid #8b5cf644; }
+        .tag.ground { background: #10b98122; color: #10b981; border: 1px solid #10b98144; }
+        .formation-select {
+            background: #0f1729; border: 1px solid #1e293b; border-radius: 6px;
+            padding: 8px 14px; color: #c8d6e5; font-size: 0.85rem;
+        }
+        .btn {
+            background: #22d3ee; color: #0a0e17; border: none; border-radius: 6px;
+            padding: 8px 16px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.8rem;
+        }
+        .btn:hover { background: #67e8f9; }
+        .btn.danger { background: #ef4444; }
+        .btn.danger:hover { background: #f87171; }
+        .msg-list { max-height: 200px; overflow-y: auto; margin-top: 12px; }
+        .msg-item {
+            padding: 6px 10px; background: #0f1729; border-radius: 4px; margin-bottom: 4px;
+            font-family: monospace; font-size: 0.75rem; border-left: 3px solid #22d3ee44;
+        }
+        .msg-item .src { color: #22d3ee; }
+        #swarm-canvas { width: 100%; height: 300px; background: #0a0e17; border-radius: 8px; border: 1px solid #1e293b; }
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; background: #22d3ee;
+            color: #0a0e17; padding: 12px 24px; border-radius: 8px; font-weight: 600;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .toast.emergency { background: #ef4444; color: white; }
+        .toast.show { opacity: 1; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚙ PixSwarm</h1>
+        <span class="badge" id="badge-role">drone</span>
+        <span class="badge" id="badge-leader">leader: —</span>
+        <span class="badge" id="badge-members">0 members</span>
+        <span class="badge emergency" id="badge-emergency" style="display:none">URGENCE</span>
+    </div>
+
+    <div class="grid">
+        <!-- Stats -->
+        <div class="card">
+            <h2>Nœud local</h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value" id="stat-node">—</div><div class="label">Node</div></div>
+                <div class="stat"><div class="value" id="stat-role">—</div><div class="label">Role</div></div>
+                <div class="stat"><div class="value" id="stat-battery">—</div><div class="label">Battery</div></div>
+                <div class="stat"><div class="value" id="stat-load">—</div><div class="label">Load</div></div>
+            </div>
+        </div>
+
+        <!-- Formation control -->
+        <div class="card">
+            <h2>Formation <span class="ctrl">
+                <select class="formation-select" id="formation-type">
+                    <option value="flying_v">Flying-V</option>
+                    <option value="grid">Grid</option>
+                    <option value="line">Line</option>
+                    <option value="loose">Loose</option>
+                </select>
+                <button class="btn" onclick="setFormation()">Appliquer</button>
+            </span></h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value" id="stat-formation">—</div><div class="label">Formation</div></div>
+                <div class="stat"><div class="value" id="stat-slot">—</div><div class="label">Slot</div></div>
+                <div class="stat"><div class="value leader" id="stat-leader">—</div><div class="label">Leader</div></div>
+            </div>
+            <canvas id="swarm-canvas"></canvas>
+        </div>
+
+        <!-- Members -->
+        <div class="card">
+            <h2>Membres de l'essaim</h2>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead><tr><th>Node</th><th>Role</th><th>Status</th><th>Battery</th><th>Load</th><th>Slot</th></tr></thead>
+                    <tbody id="members-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Emergency -->
+        <div class="card">
+            <h2>Urgence <span class="ctrl">
+                <button class="btn danger" onclick="triggerEmergency()">Broadcast Urgence</button>
+                <button class="btn" onclick="clearEmergency()">Clear</button>
+            </span></h2>
+            <div id="emergency-status" style="color:#64748b;padding:10px">Aucune urgence active</div>
+        </div>
+
+        <!-- Events -->
+        <div class="card full">
+            <h2>Événements swarm</h2>
+            <div class="msg-list" id="events-list">
+                <div style="color:#64748b;text-align:center;padding:20px">En attente d'événements…</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const canvas = document.getElementById('swarm-canvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = canvas.parentElement.clientWidth - 40;
+            canvas.height = 280;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        function showToast(msg, emergency=false) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast' + (emergency ? ' emergency' : '');
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        async function api(url, opts) {
+            const r = await fetch(url, opts);
+            return r.json();
+        }
+
+        let swarmState = {};
+
+        async function loadStatus() {
+            try {
+                const s = await api('/pixswarm/status');
+                swarmState = s;
+                document.getElementById('stat-node').textContent = s.node_id;
+                document.getElementById('stat-role').textContent = s.role;
+                document.getElementById('stat-battery').textContent =
+                    s.battery > 0 ? s.battery + '%' : '—';
+                document.getElementById('stat-load').textContent = s.load_avg || '—';
+                document.getElementById('stat-formation').textContent = s.formation;
+                document.getElementById('stat-slot').textContent = s.formation_slot;
+                document.getElementById('stat-leader').textContent = s.leader_id || '—';
+                document.getElementById('badge-role').textContent = s.role;
+                document.getElementById('badge-leader').textContent =
+                    'leader: ' + (s.leader_id || '—');
+
+                const emergEl = document.getElementById('badge-emergency');
+                if (s.emergency) {
+                    emergEl.style.display = 'inline';
+                    document.getElementById('emergency-status').innerHTML =
+                        '<span style="color:#ef4444;font-weight:600">⚠ URGENCE active</span>';
+                } else {
+                    emergEl.style.display = 'none';
+                    document.getElementById('emergency-status').innerHTML =
+                        '<span style="color:#10b981">Aucune urgence active</span>';
+                }
+            } catch (e) { console.error('status', e); }
+        }
+
+        async function loadMembers() {
+            try {
+                const d = await api('/pixswarm/members');
+                document.getElementById('badge-members').textContent =
+                    d.count + ' members';
+                const tbody = document.getElementById('members-tbody');
+                if (d.count === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px">Aucun membre</td></tr>';
+                    drawSwarm([]);
+                    return;
+                }
+                tbody.innerHTML = d.members.map(m => `<tr>
+                    <td style="color:#22d3ee;font-weight:600">${m.node_id}</td>
+                    <td><span class="tag ${m.role}">${m.role}</span></td>
+                    <td><span class="tag ${m.node_id === swarmState.leader_id ? 'leader' : 'member'}">${m.node_id === swarmState.leader_id ? 'leader' : 'member'}</span></td>
+                    <td>${m.battery > 0 ? m.battery + '%' : '—'}</td>
+                    <td>${m.load_avg || '—'}</td>
+                    <td>${m.formation_slot}</td>
+                </tr>`).join('');
+                drawSwarm(d.members);
+            } catch (e) { console.error('members', e); }
+        }
+
+        function drawSwarm(members) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const scale = 15;
+
+            // Leader
+            if (swarmState.leader_id) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#f59e0b';
+                ctx.fill();
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 9px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('L', cx, cy + 3);
+            }
+
+            // Members
+            members.forEach(m => {
+                const pos = m.position || [0, 0, 0];
+                const x = cx + pos[0] * scale;
+                const y = cy + pos[2] * scale;
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = m.node_id === swarmState.leader_id ? '#f59e0b' : '#22d3ee';
+                ctx.fill();
+                ctx.strokeStyle = '#22d3ee44';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                if (m.node_id !== swarmState.leader_id) {
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    ctx.lineTo(x, y);
+                    ctx.strokeStyle = '#22d3ee22';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([3, 3]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+        }
+
+        async function setFormation() {
+            const ftype = document.getElementById('formation-type').value;
+            const res = await api('/pixswarm/formation', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ formation: ftype }),
+            });
+            showToast('Formation: ' + ftype +
+                      (res.is_leader ? '' : ' (pas leader)'));
+            loadStatus();
+        }
+
+        async function triggerEmergency() {
+            await api('/pixswarm/emergency', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ msg: 'Urgence déclenchée depuis le dashboard' }),
+            });
+            showToast('Urgence broadcastée', true);
+            loadStatus();
+        }
+
+        async function clearEmergency() {
+            await api('/pixswarm/emergency/clear', { method: 'POST' });
+            showToast('Urgence levée');
+            loadStatus();
+        }
+
+        // Init
+        window.addEventListener('load', async () => {
+            loadStatus();
+            loadMembers();
+            setInterval(loadStatus, 2000);
+            setInterval(loadMembers, 3000);
+        });
+    </script>
+</body>
+</html>

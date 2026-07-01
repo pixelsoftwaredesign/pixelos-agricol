@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 PixelOS Web - Interface d'administration web.
 Dashboard unifié pour gérer l'infrastructure agricole.
@@ -14,7 +14,7 @@ try:
 except ImportError:
     # Mode dégradé sans Flask
     app = None
-    print("⚠️  Flask non installé: 'pip install pixelos[web]'")
+    print("[!]  Flask non installé: 'pip install pixelos[web]'")
     HAS_FLASK = False
 else:
     HAS_FLASK = True
@@ -50,140 +50,224 @@ if HAS_FLASK:
         from core.web3.routes import register_web3_routes
         register_web3_routes(app)
     except Exception as e:
-        print(f"⚠️  Web3 routes non chargées: {e}")
+        print(f"[!]  Web3 routes non chargées: {e}")
 
     # Routes Pixel Comms (Matrix, chat, vidéo, IoT bridge)
     try:
         from core.comms import register_comms_routes
         register_comms_routes(app)
     except Exception as e:
-        print(f"⚠️  Comms routes non chargées: {e}")
+        print(f"[!]  Comms routes non chargées: {e}")
 
     # Routes Souveraineté (Charte, DDNS, Disclaimer)
     try:
         from core.sovereignty import register_sovereignty_routes
         register_sovereignty_routes(app)
     except Exception as e:
-        print(f"⚠️  Sovereignty routes non chargées: {e}")
+        print(f"[!]  Sovereignty routes non chargées: {e}")
 
     # Routes Sécurité & Défense (PixStat, PixDefend, PixScudo)
     try:
         from core.security import register_security_routes
         register_security_routes(app)
     except Exception as e:
-        print(f"⚠️  Security routes non chargées: {e}")
+        print(f"[!]  Security routes non chargées: {e}")
 
     # Routes Process Manager (PixManager — list, kill, trace, monitor)
     try:
         from core.process_manager.routes import register_process_manager_routes
         register_process_manager_routes(app)
     except Exception as e:
-        print(f"⚠️  Process Manager routes non chargées: {e}")
+        print(f"[!]  Process Manager routes non chargées: {e}")
 
     # Routes Navigateur NOP (Web3 + Privacy + Wallet)
     try:
         from core.browser.routes import register_browser_routes
         register_browser_routes(app)
     except Exception as e:
-        print(f"⚠️  NOP Browser routes non chargées: {e}")
+        print(f"[!]  NOP Browser routes non chargées: {e}")
 
     # Routes PixNet (Internet Souverain P2P)
     try:
         from core.pixnet.routes import register_pixnet_routes
         register_pixnet_routes(app)
     except Exception as e:
-        print(f"⚠️  PixNet routes non chargées: {e}")
+        print(f"[!]  PixNet routes non chargées: {e}")
 
     # Routes PixBackup (sauvegarde chiffrée)
     try:
         from core.backup.routes import register_backup_routes
         register_backup_routes(app)
     except Exception as e:
-        print(f"⚠️  PixBackup routes non chargées: {e}")
+        print(f"[!]  PixBackup routes non chargées: {e}")
 
     # Routes PixAuto (automatisation NL)
     try:
         from core.pixauto.routes import register_pixauto_routes
         register_pixauto_routes(app)
     except Exception as e:
-        print(f"⚠️  PixAuto routes non chargées: {e}")
+        print(f"[!]  PixAuto routes non chargées: {e}")
 
     # Routes PixHAL (Hardware Abstraction Layer)
     try:
         from core.pixhal.routes import register_pixhal_routes
         register_pixhal_routes(app)
     except Exception as e:
-        print(f"⚠️  PixHAL routes non chargées: {e}")
+        print(f"[!]  PixHAL routes non chargées: {e}")
 
     # Routes PixKey (authentification physique)
     try:
         from core.pixkey.routes import register_pixkey_routes
         register_pixkey_routes(app)
     except Exception as e:
-        print(f"⚠️  PixKey routes non chargées: {e}")
+        print(f"[!]  PixKey routes non chargées: {e}")
 
     # Routes PixDAO (gouvernance décentralisée)
     try:
         from core.pixdao.routes import register_pixdao_routes
         register_pixdao_routes(app)
     except Exception as e:
-        print(f"⚠️  PixDAO routes non chargées: {e}")
+        print(f"[!]  PixDAO routes non chargées: {e}")
 
     # Routes Digital Twin (jumeau numérique)
     try:
         from core.digital_twin.routes import register_twin_routes
         register_twin_routes(app)
     except Exception as e:
-        print(f"⚠️  Digital Twin routes non chargées: {e}")
+        print(f"[!]  Digital Twin routes non chargées: {e}")
 
     # Routes Zero-Touch Installer
     try:
         from core.boot.routes import register_install_routes
         register_install_routes(app)
     except Exception as e:
-        print(f"⚠️  Installer routes non chargées: {e}")
+        print(f"[!]  Installer routes non chargées: {e}")
 
     # Routes PixOrchestrator
     try:
         from core.orchestrator_routes import register_orchestrator_routes
         register_orchestrator_routes(app)
     except Exception as e:
-        print(f"⚠️  PixOrchestrator routes non chargées: {e}")
+        print(f"[!]  PixOrchestrator routes non chargées: {e}")
 
     # Routes PixDHT Query Engine
     try:
         from core.pixdht_routes import register_pixdht_routes
         register_pixdht_routes(app)
     except Exception as e:
-        print(f"⚠️  PixDHT routes non chargées: {e}")
+        print(f"[!]  PixDHT routes non chargées: {e}")
 
     # Routes PixStat / Heartbeat
     try:
         from core.pixstat_routes import register_pixstat_routes
         register_pixstat_routes(app)
     except Exception as e:
-        print(f"⚠️  PixStat routes non chargées: {e}")
+        print(f"[!]  PixStat routes non chargées: {e}")
 
     # Routes PixDefend
     try:
         from core.pixdefend_routes import register_pixdefend_routes
         register_pixdefend_routes(app)
     except Exception as e:
-        print(f"⚠️  PixDefend routes non chargées: {e}")
+        print(f"[!]  PixDefend routes non chargées: {e}")
 
     # Routes PixScudo
     try:
         from core.pixscudo_routes import register_pixscudo_routes
         register_pixscudo_routes(app)
     except Exception as e:
-        print(f"⚠️  PixScudo routes non chargées: {e}")
+        print(f"[!]  PixScudo routes non chargées: {e}")
 
     # Routes IPC Bus
     try:
         from core.ipc_routes import register_ipc_routes
         register_ipc_routes(app)
     except Exception as e:
-        print(f"⚠️  IPC routes non chargées: {e}")
+        print(f"[!]  IPC routes non chargées: {e}")
+
+    # Routes Image Editor (OpenCV Python engine)
+    try:
+        from core.image_editor.routes import register_image_editor_routes
+        register_image_editor_routes(app)
+    except Exception as e:
+        print(f"[!]  Image Editor routes non chargées: {e}")
+
+    # Routes Video Editor (FFmpeg/OpenCV engine)
+    try:
+        from core.video_editor.routes import register_video_editor_routes
+        register_video_editor_routes(app)
+    except Exception as e:
+        print(f"[!]  Video Editor routes non chargées: {e}")
+
+    # Routes Audio Editor (SDL2/FFTW3 engine)
+    try:
+        from core.audio_editor.routes import register_audio_editor_routes
+        register_audio_editor_routes(app)
+    except Exception as e:
+        print(f"[!]  Audio Editor routes non chargées: {e}")
+
+    # Routes PixBalloon (jeu de divertissement robotique)
+    try:
+        from core.games.routes import register_game_routes
+        register_game_routes(app)
+    except Exception as e:
+        print(f"[!]  PixBalloon routes non chargées: {e}")
+
+    # Routes PixVision (scanner IoT détection d'objets connectés)
+    try:
+        from core.pixvision.routes import register_pixvision_routes
+        register_pixvision_routes(app)
+    except Exception as e:
+        print(f"[!]  PixVision routes non chargées: {e}")
+
+    # Routes PixDDS (distribution de données pour essaims)
+    try:
+        from core.pixdds.routes import register_pixdds_routes
+        register_pixdds_routes(app)
+    except Exception as e:
+        print(f"[!]  PixDDS routes non chargées: {e}")
+
+    # Routes PixSwarm (orchestrateur d'essaim robotique)
+    try:
+        from core.pixswarm.routes import register_pixswarm_routes
+        register_pixswarm_routes(app)
+    except Exception as e:
+        print(f"[!]  PixSwarm routes non chargées: {e}")
+
+    # Routes PixMode (gestionnaire de modes de contrôle)
+    try:
+        from core.pixmode.routes import register_pixmode_routes
+        register_pixmode_routes(app)
+    except Exception as e:
+        print(f"[!]  PixMode routes non chargées: {e}")
+
+    # Routes PixEngineer (orchestrateur de maintenance)
+    try:
+        from core.pixengineer.routes import register_pixengineer_routes
+        register_pixengineer_routes(app)
+    except Exception as e:
+        print(f"[!]  PixEngineer routes non chargées: {e}")
+
+    # Routes PixHardwareMap (visualisation 3D)
+    try:
+        from core.pixhardwaremap.routes import register_pixhardwaremap_routes
+        register_pixhardwaremap_routes(app)
+    except Exception as e:
+        print(f"[!]  PixHardwareMap routes non chargées: {e}")
+
+    # Routes PixBlackBox (enregistreur de vol)
+    try:
+        from core.pixblackbox.routes import register_pixblackbox_routes
+        register_pixblackbox_routes(app)
+    except Exception as e:
+        print(f"[!]  PixBlackBox routes non chargées: {e}")
+
+    # Routes PixPowerManager (gestion des cycles de charge/repos)
+    try:
+        from core.pixpowermanager.routes import register_pixpowermanager_routes
+        register_pixpowermanager_routes(app)
+    except Exception as e:
+        print(f"[!]  PixPowerManager routes non chargées: {e}")
 
     @app.route("/")
     def index():

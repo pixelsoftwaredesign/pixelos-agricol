@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PixDDS – Swarm Mesh</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0e17; color: #c8d6e5; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .header {
+            background: linear-gradient(135deg, #0f1729, #1a2340);
+            border-bottom: 1px solid #22d3ee33;
+            padding: 20px 30px;
+            display: flex; align-items: center; gap: 16px;
+        }
+        .header h1 { font-size: 1.5rem; color: #22d3ee; font-weight: 600; letter-spacing: 0.5px; }
+        .header .badge {
+            background: #22d3ee22; color: #22d3ee; padding: 2px 12px;
+            border-radius: 12px; font-size: 0.8rem; border: 1px solid #22d3ee44;
+        }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .card {
+            background: #111827; border-radius: 12px; border: 1px solid #1e293b;
+            padding: 20px; overflow: hidden;
+        }
+        .card.full { grid-column: 1 / -1; }
+        .card h2 { font-size: 1rem; color: #22d3ee; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card h2::before { content: ''; width: 4px; height: 16px; background: #22d3ee; border-radius: 2px; display: inline-block; }
+        .stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .stat {
+            flex: 1; min-width: 100px; background: #0f1729; border-radius: 8px;
+            padding: 14px; text-align: center; border: 1px solid #1e293b;
+        }
+        .stat .value { font-size: 1.8rem; font-weight: 700; color: #22d3ee; }
+        .stat .label { font-size: 0.75rem; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; padding: 10px 8px; color: #64748b; font-weight: 500; border-bottom: 1px solid #1e293b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; }
+        td { padding: 10px 8px; border-bottom: 1px solid #1e293b11; }
+        .tag {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 0.7rem; font-weight: 600;
+        }
+        .tag.online { background: #22d3ee22; color: #22d3ee; border: 1px solid #22d3ee44; }
+        .tag.stale { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
+        .tag.offline { background: #ef444422; color: #ef4444; border: 1px solid #ef444444; }
+        .publish-box {
+            display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;
+        }
+        .publish-box input, .publish-box textarea {
+            background: #0f1729; border: 1px solid #1e293b; border-radius: 6px;
+            padding: 10px 14px; color: #c8d6e5; font-family: monospace; font-size: 0.85rem;
+            flex: 1; min-width: 150px;
+        }
+        .publish-box button {
+            background: #22d3ee; color: #0a0e17; border: none; border-radius: 6px;
+            padding: 10px 20px; font-weight: 600; cursor: pointer; transition: 0.2s;
+        }
+        .publish-box button:hover { background: #67e8f9; }
+        .msg-list { max-height: 300px; overflow-y: auto; margin-top: 12px; }
+        .msg-item {
+            padding: 8px 12px; background: #0f1729; border-radius: 6px; margin-bottom: 6px;
+            font-family: monospace; font-size: 0.8rem; border-left: 3px solid #22d3ee44;
+        }
+        .msg-item .src { color: #22d3ee; font-weight: 600; }
+        .msg-item .ts { color: #64748b; font-size: 0.7rem; }
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; background: #22d3ee;
+            color: #0a0e17; padding: 12px 24px; border-radius: 8px; font-weight: 600;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚙ PixDDS</h1>
+        <span class="badge">Mesh Swarm</span>
+        <span class="badge" id="badge-peers">0 peers</span>
+    </div>
+
+    <div class="grid">
+        <!-- Stats -->
+        <div class="card">
+            <h2>Nœud local</h2>
+            <div class="stat-row" id="stats-local">
+                <div class="stat"><div class="value" id="stat-node">—</div><div class="label">Node ID</div></div>
+                <div class="stat"><div class="value" id="stat-domain">—</div><div class="label">Domain</div></div>
+                <div class="stat"><div class="value" id="stat-topics">0</div><div class="label">Topics</div></div>
+                <div class="stat"><div class="value" id="stat-peers">0</div><div class="label">Peers</div></div>
+            </div>
+        </div>
+
+        <!-- Publish -->
+        <div class="card">
+            <h2>Publier</h2>
+            <div class="publish-box">
+                <input id="pub-topic" value="/swarm/heartbeat" placeholder="Topic">
+                <textarea id="pub-data" rows="2" placeholder='{"status": "ok"}'>{"status": "ok"}</textarea>
+                <button onclick="publish()">Publish</button>
+            </div>
+            <div id="pub-result" class="msg-list" style="max-height:80px"></div>
+        </div>
+
+        <!-- Peers -->
+        <div class="card">
+            <h2>Pairs découverts</h2>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead><tr><th>Node ID</th><th>Host</th><th>Status</th><th>Role</th><th>Battery</th><th>Seen</th></tr></thead>
+                    <tbody id="peers-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Topics -->
+        <div class="card">
+            <h2>Topics actifs</h2>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead><tr><th>Topic</th><th>Domain</th><th>Writers</th><th>Readers</th></tr></thead>
+                    <tbody id="topics-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="card full">
+            <h2>Messages reçus <span style="font-weight:400;color:#64748b;font-size:0.8rem">— topic /swarm/heartbeat</span></h2>
+            <div class="msg-list" id="msg-list">
+                <div style="color:#64748b;text-align:center;padding:20px">En attente de messages…</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        async function api(url, opts) {
+            const r = await fetch(url, opts);
+            return r.json();
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        async function loadStatus() {
+            try {
+                const s = await api('/pixdds/status');
+                document.getElementById('stat-node').textContent = s.node_id;
+                document.getElementById('stat-domain').textContent = s.domain_id;
+                document.getElementById('stat-topics').textContent = s.topics?.length || 0;
+                document.getElementById('stat-peers').textContent = s.peers || 0;
+            } catch (e) { console.error('status', e); }
+        }
+
+        async function loadPeers() {
+            try {
+                const d = await api('/pixdds/peers');
+                const tbody = document.getElementById('peers-tbody');
+                document.getElementById('badge-peers').textContent = d.count + ' peers';
+                document.getElementById('stat-peers').textContent = d.count;
+                if (d.count === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px">Aucun pair découvert</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = d.peers.map(p => `<tr>
+                    <td style="color:#22d3ee;font-weight:600">${p.node_id}</td>
+                    <td>${p.host}:${p.port}</td>
+                    <td><span class="tag ${p.status}">${p.status}</span></td>
+                    <td>${p.swarm_role}</td>
+                    <td>${p.battery > 0 ? p.battery + '%' : '—'}</td>
+                    <td style="color:#64748b;font-size:0.75rem">${new Date(p.last_seen).toLocaleTimeString()}</td>
+                </tr>`).join('');
+            } catch (e) { console.error('peers', e); }
+        }
+
+        async function loadTopics() {
+            try {
+                const d = await api('/pixdds/topics');
+                const tbody = document.getElementById('topics-tbody');
+                if (d.count === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;padding:20px">Aucun topic</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = d.topics.map(t => `<tr>
+                    <td style="color:#22d3ee">${t.name}</td>
+                    <td>${t.domain}</td>
+                    <td>${t.writers}</td>
+                    <td>${t.readers}</td>
+                </tr>`).join('');
+            } catch (e) { console.error('topics', e); }
+        }
+
+        async function loadMessages() {
+            try {
+                const d = await api('/pixdds/messages/swarm/heartbeat');
+                const el = document.getElementById('msg-list');
+                if (!d.messages || d.messages.length === 0) {
+                    el.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px">En attente de messages…</div>';
+                    return;
+                }
+                el.innerHTML = d.messages.slice(-20).reverse().map(m => `<div class="msg-item">
+                    <span class="src">${m.source}</span>
+                    <span class="ts">[${new Date(m.ts * 1000).toLocaleTimeString()}]</span>
+                    <span style="color:#94a3b8">seq ${m.seq}</span>
+                    <br><span style="color:#e2e8f0">${JSON.stringify(m.data)}</span>
+                </div>`).join('');
+            } catch (e) { /* pas encore de reader */ }
+        }
+
+        async function publish() {
+            const topic = document.getElementById('pub-topic').value.trim();
+            const raw = document.getElementById('pub-data').value.trim();
+            try {
+                const data = JSON.parse(raw);
+                const res = await api('/pixdds/publish', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ topic, data }),
+                });
+                const el = document.getElementById('pub-result');
+                el.innerHTML = `<div class="msg-item" style="color:#22d3ee">✓ Publié sur <b>${res.topic}</b></div>`;
+                showToast('Message publié');
+                setTimeout(loadMessages, 200);
+            } catch (e) {
+                showToast('Erreur: données JSON invalides');
+            }
+        }
+
+        // Auto-subscribe on load
+        window.addEventListener('load', async () => {
+            await api('/pixdds/subscribe', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ topic: '/swarm/heartbeat' }),
+            });
+            loadStatus(); loadPeers(); loadTopics(); loadMessages();
+            setInterval(loadPeers, 3000);
+            setInterval(loadMessages, 2000);
+            setInterval(loadTopics, 5000);
+        });
+    </script>
+</body>
+</html>

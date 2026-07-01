@@ -2524,7 +2524,7 @@ def cmd_federation(args):
         print(f"  Espèce enregistrée: {record.nom_scientifique}")
         print(f"  Fingerprint: {fp}")
 
-    el    elif args.action == "mesh-status":
+    elif args.action == "mesh-status":
         from core.federation.mesh import wireguard_mesh
         st = wireguard_mesh.mesh_status()
         if args.json:

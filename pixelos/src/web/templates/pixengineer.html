@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PixEngineer – Orchestrateur Maintenance</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0e17; color: #c8d6e5; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .header {
+            background: linear-gradient(135deg, #0f1729, #1a2340);
+            border-bottom: 1px solid #22d3ee33;
+            padding: 20px 30px;
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        }
+        .header h1 { font-size: 1.5rem; color: #22d3ee; font-weight: 600; letter-spacing: 0.5px; }
+        .badge {
+            padding: 4px 14px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;
+            border: 1px solid; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .badge.idle { background: #64748b22; color: #64748b; border-color: #64748b44; }
+        .badge.monitoring { background: #22d3ee22; color: #22d3ee; border-color: #22d3ee44; }
+        .badge.analyzing { background: #f59e0b22; color: #f59e0b; border-color: #f59e0b44; }
+        .badge.repairing { background: #8b5cf622; color: #8b5cf6; border-color: #8b5cf644; }
+        .badge.emergency { background: #ef444422; color: #ef4444; border-color: #ef444444; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .card {
+            background: #111827; border-radius: 12px; border: 1px solid #1e293b;
+            padding: 20px; overflow: hidden;
+        }
+        .card.full { grid-column: 1 / -1; }
+        .card.half { grid-column: span 2; }
+        .card h2 { font-size: 1rem; color: #22d3ee; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card h2::before { content: ''; width: 4px; height: 16px; background: #22d3ee; border-radius: 2px; display: inline-block; }
+        .card h2 .ctrl { margin-left: auto; display: flex; gap: 6px; }
+        .stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .stat {
+            flex: 1; min-width: 100px; background: #0f1729; border-radius: 8px;
+            padding: 14px; text-align: center; border: 1px solid #1e293b;
+        }
+        .stat .value { font-size: 1.8rem; font-weight: 700; }
+        .stat .label { font-size: 0.75rem; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat .value.ok { color: #10b981; }
+        .stat .value.warn { color: #f59e0b; }
+        .stat .value.danger { color: #ef4444; }
+        .stat .value.info { color: #22d3ee; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; padding: 10px 8px; color: #64748b; font-weight: 500; border-bottom: 1px solid #1e293b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; }
+        td { padding: 10px 8px; border-bottom: 1px solid #1e293b11; }
+        .tag {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 0.7rem; font-weight: 600;
+        }
+        .tag.ok { background: #10b98122; color: #10b981; border: 1px solid #10b98144; }
+        .tag.warn { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
+        .tag.critical { background: #ef444422; color: #ef4444; border: 1px solid #ef444444; }
+        .tag.failure { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; }
+        .btn {
+            background: #22d3ee; color: #0a0e17; border: none; border-radius: 6px;
+            padding: 8px 16px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.8rem;
+        }
+        .btn:hover { background: #67e8f9; }
+        .btn.danger { background: #ef4444; }
+        .btn.danger:hover { background: #f87171; }
+        .btn.warning { background: #f59e0b; }
+        .btn.warning:hover { background: #fbbf24; }
+        .input-field {
+            background: #0f1729; border: 1px solid #1e293b; border-radius: 6px;
+            padding: 8px 12px; color: #c8d6e5; font-size: 0.85rem;
+        }
+        .msg-list { max-height: 250px; overflow-y: auto; margin-top: 12px; }
+        .msg-item {
+            padding: 6px 10px; background: #0f1729; border-radius: 4px; margin-bottom: 4px;
+            font-family: monospace; font-size: 0.75rem; border-left: 3px solid #22d3ee44;
+        }
+        .indicator {
+            display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px;
+        }
+        .indicator.green { background: #10b981; }
+        .indicator.yellow { background: #f59e0b; }
+        .indicator.red { background: #ef4444; }
+        .flex-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; background: #22d3ee;
+            color: #0a0e17; padding: 12px 24px; border-radius: 8px; font-weight: 600;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        .toast.emergency { background: #ef4444; color: white; }
+        @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1> PixEngineer</h1>
+        <span class="badge monitoring" id="badge-mode">MONITORING</span>
+        <span class="badge" id="badge-health" style="background:#10b98122;color:#10b981;border-color:#10b98144">0 OK</span>
+        <span class="badge" id="badge-failures" style="background:#ef444422;color:#ef4444;border-color:#ef444444">0 panne</span>
+    </div>
+
+    <div class="grid">
+        <!-- Résumé -->
+        <div class="card">
+            <h2>Santé système</h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value info" id="stat-total">0</div><div class="label">Nœuds</div></div>
+                <div class="stat"><div class="value ok" id="stat-healthy">0</div><div class="label">OK</div></div>
+                <div class="stat"><div class="value warn" id="stat-stress">0</div><div class="label">Stress</div></div>
+                <div class="stat"><div class="value danger" id="stat-critical">0</div><div class="label">Critique</div></div>
+                <div class="stat"><div class="value danger" id="stat-failure">0</div><div class="label">Panne</div></div>
+            </div>
+        </div>
+
+        <!-- Prédictions -->
+        <div class="card">
+            <h2>Maintenance prédictive</h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value info" id="pred-count">0</div><div class="label">Prédictions</div></div>
+                <div class="stat"><div class="value danger" id="pred-critical">0</div><div class="label">Critiques</div></div>
+                <div class="stat"><div class="value warn" id="pred-warning">0</div><div class="label">Alertes</div></div>
+            </div>
+        </div>
+
+        <!-- Tâches -->
+        <div class="card">
+            <h2>Réparations <span class="ctrl">
+                <button class="btn" onclick="refreshAll()">Rafraîchir</button>
+            </span></h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value info" id="repair-pending">0</div><div class="label">En attente</div></div>
+                <div class="stat"><div class="value ok" id="repair-completed">0</div><div class="label">Fait</div></div>
+                <div class="stat"><div class="value danger" id="repair-failed">0</div><div class="label">Échec</div></div>
+            </div>
+        </div>
+
+        <!-- Simulation de feedback -->
+        <div class="card">
+            <h2>Simuler feedback</h2>
+            <div class="flex-row" style="margin-bottom:8px">
+                <input class="input-field" id="sim-node" value="MOTOR_01" placeholder="Node ID" style="flex:1">
+                <select class="input-field" id="sim-status" style="width:100px">
+                    <option value="0">OK</option>
+                    <option value="1">STRESS</option>
+                    <option value="2">CRITICAL</option>
+                    <option value="3">FAILURE</option>
+                </select>
+            </div>
+            <div class="flex-row">
+                <input class="input-field" id="sim-temp" type="number" value="45" placeholder="Temp" style="width:80px">
+                <input class="input-field" id="sim-current" type="number" value="1.2" placeholder="I" style="width:80px">
+                <input class="input-field" id="sim-vib" type="number" step="0.01" value="0.05" placeholder="Vib" style="width:80px">
+                <button class="btn warning" onclick="simulateFeedback()">Simuler</button>
+            </div>
+        </div>
+
+        <!-- PixHardwareMap — Visualisation 3D -->
+        <div class="card full">
+            <h2>PixHardwareMap<span class="ctrl">
+                <button class="btn" id="layer-health" onclick="toggleLayer('health')">Santé</button>
+                <button class="btn warning" id="layer-maintenance" onclick="toggleLayer('maintenance')">Maintenance</button>
+                <button class="btn danger" id="layer-intervention" onclick="toggleLayer('intervention')">Intervention</button>
+            </span></h2>
+            <div id="phm-container" style="position:relative;width:100%;height:420px;background:#0a0e17;border-radius:8px;overflow:hidden;cursor:grab">
+                <div id="phm-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#64748b">Chargement de la carte 3D…</div>
+                <div id="phm-tooltip" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:#111827ee;border:1px solid #22d3ee44;border-radius:8px;padding:8px 16px;font-size:0.8rem;color:#c8d6e5;pointer-events:none;opacity:0;transition:opacity 0.2s;white-space:nowrap"></div>
+            </div>
+        </div>
+
+        <!-- Nœuds matériels (table détaillée) -->
+        <div class="card half" id="nodes-table-card">
+            <h2>Table des nœuds</h2>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead><tr><th>Nœud</th><th>Status</th><th>Temp</th><th>Courant</th><th>Vibration</th><th>Pannes</th></tr></thead>
+                    <tbody id="nodes-tbody"><tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px">Aucun nœud</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Prédictions détaillées -->
+        <div class="card">
+            <h2>Prédictions</h2>
+            <div class="msg-list" id="predictions-list">
+                <div style="color:#64748b;text-align:center;padding:20px">Aucune prédiction</div>
+            </div>
+        </div>
+
+        <!-- Tâches de réparation -->
+        <div class="card full">
+            <h2>File de réparation</h2>
+            <div class="msg-list" id="tasks-list">
+                <div style="color:#64748b;text-align:center;padding:20px">Aucune tâche</div>
+            </div>
+        </div>
+
+        <!-- Historique -->
+        <div class="card full">
+            <h2>Rapports d'ingénieur</h2>
+            <div class="msg-list" id="history-list">
+                <div style="color:#64748b;text-align:center;padding:20px">Chargement…</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        function showToast(msg, emergency=false) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast' + (emergency ? ' emergency' : '');
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        async function api(url, opts) {
+            const r = await fetch(url, opts);
+            return r.json();
+        }
+
+        function nodeStatusClass(code) {
+            return ['ok', 'warn', 'critical', 'failure'][code] || 'ok';
+        }
+
+        function nodeStatusLabel(code) {
+            return ['OK', 'STRESS', 'CRITICAL', 'FAILURE'][code] || '?';
+        }
+
+        async function loadStatus() {
+            try {
+                const s = await api('/pixengineer/status');
+                document.getElementById('badge-mode').className = 'badge ' + s.mode;
+                document.getElementById('badge-mode').textContent = s.mode.toUpperCase();
+            } catch (e) {}
+        }
+
+        async function loadReport() {
+            try {
+                const r = await api('/pixengineer/report');
+                if (!r || !r.total_nodes) return;
+                document.getElementById('stat-total').textContent = r.total_nodes;
+                document.getElementById('stat-healthy').textContent = r.healthy_nodes;
+                document.getElementById('stat-stress').textContent = r.stress_nodes;
+                document.getElementById('stat-critical').textContent = r.critical_nodes;
+                document.getElementById('stat-failure').textContent = r.failure_nodes;
+                document.getElementById('badge-health').textContent = r.healthy_nodes + ' OK';
+                document.getElementById('badge-failures').textContent = r.failure_nodes + ' panne';
+                document.getElementById('pred-count').textContent = r.predictions_count;
+                document.getElementById('repair-pending').textContent = r.tasks_pending;
+                document.getElementById('repair-completed').textContent = r.repairs_completed;
+            } catch (e) {}
+        }
+
+        async function loadHardware() {
+            try {
+                const hw = await api('/pixengineer/hardware');
+                const tbody = document.getElementById('nodes-tbody');
+                const nodes = hw.nodes || {};
+                const entries = Object.entries(nodes);
+                if (!entries.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px">Aucun nœud</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = entries.map(([nid, node]) => {
+                    const fb = node.last_feedback || {};
+                    const cls = nodeStatusClass(node.status);
+                    return `<tr>
+                        <td style="color:#22d3ee;font-weight:600">${nid}</td>
+                        <td><span class="tag ${cls}">${nodeStatusLabel(node.status)}</span></td>
+                        <td>${fb.temp || '—'}°C</td>
+                        <td>${fb.current || '—'}A</td>
+                        <td>${fb.vibration || '—'}g</td>
+                        <td>${node.failure_count || 0}</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {}
+        }
+
+        async function loadPredictions() {
+            try {
+                const preds = await api('/pixengineer/predictions');
+                const entries = Object.entries(preds || {});
+                const list = document.getElementById('predictions-list');
+                let crit = 0, warn = 0;
+                if (!entries.length) {
+                    list.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px">Aucune prédiction</div>';
+                    return;
+                }
+                list.innerHTML = entries.map(([nid, p]) => {
+                    if (p.rul_hours < 10) crit++;
+                    else if (p.rul_hours < 50) warn++;
+                    const cls = p.rul_hours < 10 ? 'danger' : p.rul_hours < 50 ? 'warn' : 'ok';
+                    const label = p.rul_hours < 10 ? 'CRITIQUE' : p.rul_hours < 50 ? 'ALERTE' : 'OK';
+                    return `<div class="msg-item" style="border-left-color:${cls === 'danger' ? '#ef4444' : cls === 'warn' ? '#f59e0b' : '#10b981'}">
+                        <span style="color:#22d3ee">${nid}</span>
+                        <span class="${cls}">${label}</span>
+                        RUL ${p.rul_hours}h · proba ${(p.failure_probability * 100).toFixed(0)}% · ${p.primary_indicator}
+                    </div>`;
+                }).join('');
+                document.getElementById('pred-critical').textContent = crit;
+                document.getElementById('pred-warning').textContent = warn;
+            } catch (e) {}
+        }
+
+        async function loadTasks() {
+            try {
+                const tasks = await api('/pixengineer/tasks');
+                const list = document.getElementById('tasks-list');
+                if (!tasks || !tasks.length) {
+                    list.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px">Aucune tâche</div>';
+                    return;
+                }
+                list.innerHTML = tasks.map(t => {
+                    const cls = t.status === 'COMPLETED' ? 'ok' : t.status === 'FAILED' ? 'danger' : 'warn';
+                    return `<div class="msg-item">
+                        <span style="color:#22d3ee">${t.node_id}</span>
+                        <span class="${cls}">${t.status}</span>
+                        [P${t.priority.toFixed(1)}] ${t.description}
+                    </div>`;
+                }).join('');
+            } catch (e) {}
+        }
+
+        async function loadHistory() {
+            try {
+                const h = await api('/pixengineer/history');
+                const list = document.getElementById('history-list');
+                if (!h || !h.length) {
+                    list.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px">Aucun rapport</div>';
+                    return;
+                }
+                list.innerHTML = h.map(r => `<div class="msg-item">
+                    <span style="color:#22d3ee">${r.mode}</span>
+                    ${r.healthy_nodes}/${r.total_nodes} OK ·
+                    <span class="${r.failure_nodes > 0 ? 'danger' : 'ok'}">${r.failure_nodes} panne(s)</span> ·
+                    ${r.summary}
+                </div>`).join('');
+            } catch (e) {}
+        }
+
+        async function simulateFeedback() {
+            const node = document.getElementById('sim-node').value;
+            const status = parseInt(document.getElementById('sim-status').value);
+            const temp = parseFloat(document.getElementById('sim-temp').value) || 45;
+            const current = parseFloat(document.getElementById('sim-current').value) || 1.2;
+            const vib = parseFloat(document.getElementById('sim-vib').value) || 0.05;
+            const res = await api('/pixengineer/simulate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    node_id: node,
+                    status_code: status,
+                    temp, current, vibration: vib,
+                }),
+            });
+            showToast('Feedback ' + node + ' = ' + ['OK','STRESS','CRITICAL','FAILURE'][status],
+                       status >= 2);
+            refreshAll();
+        }
+
+        // ── PixHardwareMap : Three.js 3D Viewer ─────────────────────
+
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let phmScene, phmCamera, phmRenderer, phmControls;
+        let phmNodeMeshes = {};
+        let phmEdgeLines = [];
+        let phmAnimId = null;
+        let phmInitialized = false;
+        const phmContainer = document.getElementById('phm-container');
+
+        function phmColorHex(css) {
+            const d = document.createElement('div');
+            d.style.color = css;
+            document.body.appendChild(d);
+            const c = getComputedStyle(d).color;
+            document.body.removeChild(d);
+            const m = c.match(/\d+/g);
+            return m ? new THREE.Color(parseInt(m[0])/255, parseInt(m[1])/255, parseInt(m[2])/255) : new THREE.Color(0.2,0.2,0.2);
+        }
+
+        function initPHM() {
+            if (!phmContainer || phmInitialized) return;
+            const w = phmContainer.clientWidth;
+            const h = phmContainer.clientHeight;
+            if (w < 10) return;
+
+            phmCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 50);
+            phmCamera.position.set(6, 4, 8);
+
+            phmRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            phmRenderer.setSize(w, h);
+            phmRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            phmRenderer.setClearColor(0x0a0e17, 1);
+            phmContainer.appendChild(phmRenderer.domElement);
+
+            phmControls = new OrbitControls(phmCamera, phmRenderer.domElement);
+            phmControls.enableDamping = true;
+            phmControls.dampingFactor = 0.08;
+            phmControls.minDistance = 2;
+            phmControls.maxDistance = 20;
+            phmControls.target.set(0, 1, 0);
+            phmControls.update();
+
+            phmScene = new THREE.Scene();
+
+            // Lumière
+            const amb = new THREE.AmbientLight(0x404060, 0.6);
+            phmScene.add(amb);
+            const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+            dir.position.set(5, 10, 7);
+            phmScene.add(dir);
+            const fill = new THREE.DirectionalLight(0x4488cc, 0.4);
+            fill.position.set(-5, 3, -5);
+            phmScene.add(fill);
+
+            // Grille subtile
+            const grid = new THREE.GridHelper(10, 10, 0x22d3ee22, 0x22d3ee11);
+            grid.position.y = -0.8;
+            phmScene.add(grid);
+
+            phmInitialized = true;
+            document.getElementById('phm-loading').style.display = 'none';
+
+            window.addEventListener('resize', () => {
+                const cw = phmContainer.clientWidth;
+                const ch = phmContainer.clientHeight;
+                if (cw > 0 && ch > 0) {
+                    phmCamera.aspect = cw / ch;
+                    phmCamera.updateProjectionMatrix();
+                    phmRenderer.setSize(cw, ch);
+                }
+            });
+
+            renderPHM();
+        }
+
+        function buildPHMScene(data) {
+            if (!phmScene) return;
+            // Nettoyer
+            Object.values(phmNodeMeshes).forEach(m => { phmScene.remove(m); m.geometry?.dispose(); m.material?.dispose(); });
+            phmNodeMeshes = {};
+            phmEdgeLines.forEach(l => { phmScene.remove(l); l.geometry?.dispose(); l.material?.dispose(); });
+            phmEdgeLines = [];
+
+            const nodes = data.nodes || [];
+            const edges = data.edges || [];
+            const layers = data.layers || {};
+            const nodeMap = {};
+            nodes.forEach(n => nodeMap[n.node_id] = n);
+
+            // Arêtes
+            edges.forEach(e => {
+                const from = nodeMap[e.from];
+                const to = nodeMap[e.to];
+                if (!from || !to) return;
+                const p1 = new THREE.Vector3(from.position[0], from.position[1], from.position[2]);
+                const p2 = new THREE.Vector3(to.position[0], to.position[1], to.position[2]);
+                const mid = p1.clone().add(p2).multiplyScalar(0.5);
+                const dirVec = p2.clone().sub(p1);
+                const len = dirVec.length();
+                const geo = new THREE.CylinderGeometry(0.04, 0.04, len, 4);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: 0x334155, transparent: true, opacity: 0.6,
+                });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.copy(mid);
+                mesh.quaternion.setFromUnitVectors(
+                    new THREE.Vector3(0, 1, 0), dirVec.clone().normalize()
+                );
+                phmScene.add(mesh);
+                phmEdgeLines.push(mesh);
+            });
+
+            // Nœuds
+            nodes.forEach(n => {
+                const color = phmColorHex(n.color);
+                const radius = n.radius * 0.35;
+                const pos = new THREE.Vector3(n.position[0], n.position[1], n.position[2]);
+
+                // Sphère principale
+                const sphereGeo = new THREE.SphereGeometry(radius, 24, 24);
+                const sphereMat = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: 0.3,
+                    metalness: 0.7,
+                    emissive: n.pulse ? color : new THREE.Color(0x000000),
+                    emissiveIntensity: n.pulse ? 0.3 : 0,
+                });
+                const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                sphere.position.copy(pos);
+                sphere.userData = { nodeId: n.node_id, label: n.label };
+                phmScene.add(sphere);
+                phmNodeMeshes[n.node_id] = sphere;
+
+                // Anneau pour CRITICAL/FAILURE
+                if (n.pulse) {
+                    const ringGeo = new THREE.RingGeometry(radius * 1.1, radius * 1.4, 32);
+                    const ringMat = new THREE.MeshBasicMaterial({
+                        color: color, side: THREE.DoubleSide, transparent: true, opacity: 0.5,
+                    });
+                    const ring = new THREE.Mesh(ringGeo, ringMat);
+                    ring.position.copy(pos);
+                    ring.lookAt(phmCamera.position);
+                    ring.userData = { isRing: true, nodeId: n.node_id };
+                    phmScene.add(ring);
+                    phmNodeMeshes[n.node_id + '_ring'] = ring;
+                }
+
+                // Label sprite
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'rgba(10,14,23,0.8)';
+                ctx.roundRect(0, 0, 256, 64, 8);
+                ctx.fill();
+                ctx.fillStyle = '#c8d6e5';
+                ctx.font = 'bold 20px monospace';
+                ctx.fillText(n.label || n.node_id, 12, 40);
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.needsUpdate = true;
+                const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+                const sprite = new THREE.Sprite(spriteMat);
+                sprite.position.set(pos.x, pos.y - radius - 0.45, pos.z);
+                sprite.scale.set(2.5, 0.6, 1);
+                sprite.userData = { isLabel: true, nodeId: n.node_id };
+                phmScene.add(sprite);
+                phmNodeMeshes[n.node_id + '_label'] = sprite;
+
+                // Overlay maintenance
+                if (layers.maintenance && n.maintenance_task) {
+                    const warnGeo = new THREE.SphereGeometry(radius * 0.2, 8, 8);
+                    const warnMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+                    const warn = new THREE.Mesh(warnGeo, warnMat);
+                    warn.position.set(pos.x + radius * 0.8, pos.y + radius * 0.8, pos.z);
+                    phmScene.add(warn);
+                    phmNodeMeshes[n.node_id + '_warn'] = warn;
+                }
+
+                // Overlay intervention (certificat)
+                if (layers.intervention && n.cert_valid) {
+                    const certGeo = new THREE.SphereGeometry(radius * 0.15, 6, 6);
+                    const certMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+                    const cert = new THREE.Mesh(certGeo, certMat);
+                    cert.position.set(pos.x - radius * 0.8, pos.y + radius * 0.8, pos.z);
+                    phmScene.add(cert);
+                    phmNodeMeshes[n.node_id + '_cert'] = cert;
+                }
+            });
+        }
+
+        function renderPHM() {
+            phmAnimId = requestAnimationFrame(renderPHM);
+            if (phmControls) phmControls.update();
+            // Faire face aux anneaux vers la caméra
+            Object.entries(phmNodeMeshes).forEach(([id, mesh]) => {
+                if (mesh.userData?.isRing && phmCamera) {
+                    mesh.lookAt(phmCamera.position);
+                }
+            });
+            if (phmRenderer && phmScene && phmCamera) {
+                phmRenderer.render(phmScene, phmCamera);
+            }
+        }
+
+        // Raycaster pour clic
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+
+        phmContainer?.addEventListener('pointerdown', (e) => {
+            if (!phmCamera || !phmRenderer) return;
+            const rect = phmContainer.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, phmCamera);
+            const spheres = Object.values(phmNodeMeshes).filter(m => !m.userData?.isRing && !m.userData?.isLabel);
+            const hits = raycaster.intersectObjects(spheres);
+            if (hits.length > 0) {
+                const hit = hits[0].object;
+                const nid = hit.userData?.nodeId;
+                if (nid) showNodeTooltip(nid);
+            } else {
+                hideNodeTooltip();
+            }
+        });
+
+        async function showNodeTooltip(nodeId) {
+            const tip = document.getElementById('phm-tooltip');
+            try {
+                const data = await api('/api/pixhardwaremap/inspect/' + nodeId);
+                if (!data) return;
+                const fb = data.last_feedback || {};
+                const lines = [
+                    `<b style="color:#22d3ee">${data.node_id}</b> — ${data.label}`,
+                    `Status: ${['OK','STRESS','CRITICAL','FAILURE'][data.status_code] || '?'} | Pannes: ${data.failure_count || 0}`,
+                ];
+                if (fb.temp !== undefined) lines.push(`${fb.temp}°C · ${fb.current || '?'}A · ${fb.vibration || '?'}g`);
+                if (data.prediction) {
+                    const p = data.prediction;
+                    lines.push(`RUL ${p.rul_hours}h · proba ${(p.failure_probability*100).toFixed(0)}%`);
+                }
+                lines.push(`Certificat: ${data.cert_valid ? '✅ Valide' : data.cert_valid === false ? '❌ Invalide' : '—'}`);
+                tip.innerHTML = lines.join(' · ');
+                tip.style.opacity = '1';
+            } catch (e) {
+                tip.innerHTML = `<span style="color:#ef4444">Erreur chargement ${nodeId}</span>`;
+                tip.style.opacity = '1';
+            }
+        }
+
+        function hideNodeTooltip() {
+            document.getElementById('phm-tooltip').style.opacity = '0';
+        }
+
+        async function loadPHMScene() {
+            try {
+                const data = await api('/api/pixhardwaremap/scene');
+                if (data && data.nodes) {
+                    if (!phmInitialized) initPHM();
+                    buildPHMScene(data);
+                }
+            } catch (e) {}
+        }
+
+        async function toggleLayer(name) {
+            try {
+                const res = await api('/api/pixhardwaremap/layers/' + name + '/toggle', { method: 'POST' });
+                if (res.visible !== undefined) {
+                    const btn = document.getElementById('layer-' + name);
+                    if (btn) btn.style.opacity = res.visible ? '1' : '0.4';
+                    await loadPHMScene();
+                }
+            } catch (e) {}
+        }
+
+        function refreshPHM() {
+            loadPHMScene().catch(() => {});
+        }
+
+        async function refreshAll() {
+            await Promise.all([
+                loadStatus(), loadReport(), loadHardware(),
+                loadPredictions(), loadTasks(), loadHistory(),
+            ]);
+        }
+
+        window.addEventListener('load', () => {
+            refreshAll();
+            setInterval(refreshAll, 3000);
+            // Lancer le 3D après un délai pour laisser la page se stabiliser
+            setTimeout(() => {
+                initPHM();
+                refreshPHM();
+                setInterval(refreshPHM, 3000);
+            }, 500);
+        });
+    </script>
+</body>
+</html>

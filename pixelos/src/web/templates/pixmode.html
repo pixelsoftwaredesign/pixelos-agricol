@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PixMode – Gestionnaire de Modes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0e17; color: #c8d6e5; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .header {
+            background: linear-gradient(135deg, #0f1729, #1a2340);
+            border-bottom: 1px solid #22d3ee33;
+            padding: 20px 30px;
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        }
+        .header h1 { font-size: 1.5rem; color: #22d3ee; font-weight: 600; letter-spacing: 0.5px; }
+        .badge {
+            padding: 4px 14px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;
+            border: 1px solid; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .badge.auto { background: #10b98122; color: #10b981; border-color: #10b98144; }
+        .badge.manual { background: #f59e0b22; color: #f59e0b; border-color: #f59e0b44; }
+        .badge.idle { background: #64748b22; color: #64748b; border-color: #64748b44; }
+        .badge.emergency { background: #ef444422; color: #ef4444; border-color: #ef444444; }
+        .badge.maintenance { background: #8b5cf622; color: #8b5cf6; border-color: #8b5cf644; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .card {
+            background: #111827; border-radius: 12px; border: 1px solid #1e293b;
+            padding: 20px; overflow: hidden;
+        }
+        .card.full { grid-column: 1 / -1; }
+        .card h2 { font-size: 1rem; color: #22d3ee; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card h2::before { content: ''; width: 4px; height: 16px; background: #22d3ee; border-radius: 2px; display: inline-block; }
+        .card h2 .ctrl { margin-left: auto; display: flex; gap: 6px; }
+        .stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .stat {
+            flex: 1; min-width: 100px; background: #0f1729; border-radius: 8px;
+            padding: 14px; text-align: center; border: 1px solid #1e293b;
+        }
+        .stat .value { font-size: 1.8rem; font-weight: 700; }
+        .stat .value.auto { color: #10b981; }
+        .stat .value.manual { color: #f59e0b; }
+        .stat .value.idle { color: #64748b; }
+        .stat .value.emergency { color: #ef4444; }
+        .stat .value.maintenance { color: #8b5cf6; }
+        .stat .label { font-size: 0.75rem; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat .value.warn { color: #f59e0b; }
+        .stat .value.danger { color: #ef4444; }
+        .stat .value.ok { color: #10b981; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; padding: 10px 8px; color: #64748b; font-weight: 500; border-bottom: 1px solid #1e293b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; }
+        td { padding: 10px 8px; border-bottom: 1px solid #1e293b11; }
+        .mode-select {
+            background: #0f1729; border: 1px solid #1e293b; border-radius: 6px;
+            padding: 8px 14px; color: #c8d6e5; font-size: 0.85rem;
+        }
+        .btn {
+            background: #22d3ee; color: #0a0e17; border: none; border-radius: 6px;
+            padding: 8px 16px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.8rem;
+        }
+        .btn:hover { background: #67e8f9; }
+        .btn.danger { background: #ef4444; }
+        .btn.danger:hover { background: #f87171; }
+        .btn.warning { background: #f59e0b; }
+        .btn.warning:hover { background: #fbbf24; }
+        .input-field {
+            background: #0f1729; border: 1px solid #1e293b; border-radius: 6px;
+            padding: 8px 12px; color: #c8d6e5; font-size: 0.85rem; width: 100%;
+        }
+        .msg-list { max-height: 200px; overflow-y: auto; margin-top: 12px; }
+        .msg-item {
+            padding: 6px 10px; background: #0f1729; border-radius: 4px; margin-bottom: 4px;
+            font-family: monospace; font-size: 0.75rem; border-left: 3px solid #22d3ee44;
+        }
+        .msg-item .ts { color: #64748b; }
+        .msg-item .ok { color: #10b981; }
+        .msg-item .err { color: #ef4444; }
+        .indicator {
+            display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+            margin-right: 6px;
+        }
+        .indicator.green { background: #10b981; }
+        .indicator.yellow { background: #f59e0b; }
+        .indicator.red { background: #ef4444; }
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; background: #22d3ee;
+            color: #0a0e17; padding: 12px 24px; border-radius: 8px; font-weight: 600;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        .flex-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1> PixMode</h1>
+        <span class="badge auto" id="badge-mode">AUTO</span>
+        <span class="badge" id="badge-operator" style="background:#22d3ee11;color:#22d3ee;border-color:#22d3ee33">operator: —</span>
+        <span class="badge" id="badge-deadman" style="background:#10b98122;color:#10b981;border-color:#10b98144">deadman: OK</span>
+    </div>
+
+    <div class="grid">
+        <!-- Mode Control -->
+        <div class="card">
+            <h2>Contrôle du mode <span class="ctrl">
+                <select class="mode-select" id="mode-target">
+                    <option value="auto">AUTO</option>
+                    <option value="manual">MANUAL</option>
+                    <option value="idle">IDLE</option>
+                    <option value="emergency">EMERGENCY</option>
+                    <option value="maintenance">MAINTENANCE</option>
+                </select>
+                <button class="btn" onclick="switchMode()">Appliquer</button>
+            </span></h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value auto" id="stat-mode">—</div><div class="label">Mode actuel</div></div>
+                <div class="stat"><div class="value" id="stat-previous">—</div><div class="label">Précédent</div></div>
+                <div class="stat"><div class="value" id="stat-changes">0</div><div class="label">Changements</div></div>
+                <div class="stat"><div class="value" id="stat-commands">0</div><div class="label">Commandes manuelles</div></div>
+            </div>
+            <div style="margin-top:12px">
+                <div class="flex-row">
+                    <input class="input-field" id="auth-operator" placeholder="Opérateur" style="flex:1">
+                    <input class="input-field" id="auth-token" placeholder="Token" style="flex:1">
+                    <input class="input-field" id="auth-role" placeholder="Role" value="technician" style="width:120px">
+                </div>
+            </div>
+        </div>
+
+        <!-- Selecteur Physique -->
+        <div class="card">
+            <h2>Sélecteur physique <span class="ctrl">
+                <select class="mode-select" id="selector-pos">
+                    <option value="AUTO">AUTO</option>
+                    <option value="MANUAL">MANUAL</option>
+                    <option value="OFF">OFF</option>
+                </select>
+                <button class="btn" onclick="physicalSelector()">Tourner</button>
+            </span></h2>
+            <div style="background:#0f1729;border-radius:8px;padding:16px;border:1px solid #1e293b;margin-top:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:#10b981;font-weight:600">AUTO</span>
+                    <span style="color:#f59e0b;font-weight:600">MANUAL</span>
+                    <span style="color:#ef4444;font-weight:600">OFF</span>
+                </div>
+                <div style="position:relative;height:6px;background:#1e293b;border-radius:3px;margin-top:10px">
+                    <div id="selector-indicator" style="position:absolute;top:-4px;width:14px;height:14px;border-radius:50%;background:#22d3ee;transition:left 0.3s;left:0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deadman Switch -->
+        <div class="card">
+            <h2>Deadman Switch</h2>
+            <div class="stat-row">
+                <div class="stat"><div class="value ok" id="deadman-healthy">OK</div><div class="label">État</div></div>
+                <div class="stat"><div class="value" id="deadman-since">0.0s</div><div class="label">Dernier signal</div></div>
+                <div class="stat"><div class="value" id="deadman-armed">—</div><div class="label">Armé</div></div>
+            </div>
+            <div class="flex-row" style="margin-top:12px">
+                <button class="btn" onclick="kickDeadman()"> Kick Deadman</button>
+            </div>
+        </div>
+
+        <!-- Safety Sensors -->
+        <div class="card">
+            <h2>Capteurs de sécurité</h2>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div style="background:#0f1729;border-radius:6px;padding:10px;border:1px solid #1e293b">
+                    <div class="flex-row">
+                        <span class="indicator green" id="safety-obstacle-led"></span>
+                        <span>Obstacle</span>
+                    </div>
+                    <div style="font-size:1.2rem;font-weight:700;margin-top:4px" id="safety-obstacle">—</div>
+                </div>
+                <div style="background:#0f1729;border-radius:6px;padding:10px;border:1px solid #1e293b">
+                    <div class="flex-row">
+                        <span class="indicator green" id="safety-human-led"></span>
+                        <span>Humain</span>
+                    </div>
+                    <div style="font-size:1.2rem;font-weight:700;margin-top:4px" id="safety-human">—</div>
+                </div>
+                <div style="background:#0f1729;border-radius:6px;padding:10px;border:1px solid #1e293b">
+                    <div class="flex-row">
+                        <span class="indicator green" id="safety-battery-led"></span>
+                        <span>Batterie</span>
+                    </div>
+                    <div style="font-size:1.2rem;font-weight:700;margin-top:4px" id="safety-battery">—</div>
+                </div>
+                <div style="background:#0f1729;border-radius:6px;padding:10px;border:1px solid #1e293b">
+                    <div class="flex-row">
+                        <span class="indicator green" id="safety-allclear-led"></span>
+                        <span>All Clear</span>
+                    </div>
+                    <div style="font-size:1.2rem;font-weight:700;margin-top:4px" id="safety-allclear">—</div>
+                </div>
+            </div>
+            <div class="flex-row" style="margin-top:12px">
+                <button class="btn warning" onclick="simulateObstacle()">Simuler obstacle</button>
+                <button class="btn danger" onclick="simulateHuman()">Simuler humain</button>
+                <button class="btn" onclick="simulateClear()">Clear capteurs</button>
+            </div>
+        </div>
+
+        <!-- Commande manuelle -->
+        <div class="card">
+            <h2>Commande manuelle</h2>
+            <div class="flex-row" style="margin-bottom:12px">
+                <input class="input-field" id="cmd-linear" type="number" step="0.1" value="0.5" placeholder="Vitesse linéaire" style="width:140px">
+                <input class="input-field" id="cmd-angular" type="number" step="0.1" value="0.0" placeholder="Vitesse angulaire" style="width:140px">
+                <button class="btn" onclick="sendCommand()">Envoyer</button>
+            </div>
+            <div id="cmd-result" style="background:#0f1729;border-radius:6px;padding:10px;font-family:monospace;font-size:0.8rem;border:1px solid #1e293b">
+                Aucune commande
+            </div>
+        </div>
+
+        <!-- Historique -->
+        <div class="card full">
+            <h2>Historique des changements de mode</h2>
+            <div class="msg-list" id="history-list">
+                <div style="color:#64748b;text-align:center;padding:20px">Chargement…</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        async function api(url, opts) {
+            const r = await fetch(url, opts);
+            return r.json();
+        }
+
+        let modeState = {};
+
+        function updateBadges(s) {
+            const badge = document.getElementById('badge-mode');
+            badge.className = 'badge ' + s.mode;
+            badge.textContent = s.mode.toUpperCase();
+
+            document.getElementById('badge-operator').textContent =
+                'operator: ' + (s.operator || '—');
+
+            const dbadge = document.getElementById('badge-deadman');
+            if (s.deadman_healthy) {
+                dbadge.style.background = '#10b98122';
+                dbadge.style.color = '#10b981';
+                dbadge.style.borderColor = '#10b98144';
+                dbadge.textContent = 'deadman: OK';
+            } else {
+                dbadge.style.background = '#ef444422';
+                dbadge.style.color = '#ef4444';
+                dbadge.style.borderColor = '#ef444444';
+                dbadge.textContent = 'deadman: TIMEOUT';
+            }
+        }
+
+        function updateStats(s) {
+            document.getElementById('stat-mode').textContent = s.mode.toUpperCase();
+            document.getElementById('stat-mode').className = 'value ' + s.mode;
+            document.getElementById('stat-previous').textContent = s.previous_mode.toUpperCase();
+            document.getElementById('stat-changes').textContent = s.mode_changes;
+            document.getElementById('stat-commands').textContent = s.manual_commands;
+
+            // Deadman
+            document.getElementById('deadman-healthy').textContent = s.deadman_healthy ? 'OK' : 'TIMEOUT';
+            document.getElementById('deadman-healthy').className = 'value ' + (s.deadman_healthy ? 'ok' : 'danger');
+            document.getElementById('deadman-since').textContent = s.deadman_time_since_signal + 's';
+            document.getElementById('deadman-armed').textContent = s.deadman_armed ? 'ARMÉ' : '—';
+            document.getElementById('deadman-armed').className = 'value ' + (s.deadman_armed ? 'warn' : '');
+
+            // Safety
+            const sf = s.safety || {};
+            updateSafetyLED('safety-obstacle-led', sf.obstacle_ahead, sf.obstacle_ahead ? 'red' : 'green');
+            document.getElementById('safety-obstacle').textContent = sf.obstacle_ahead ? sf.obstacle_distance.toFixed(1) + 'm' : 'Aucun';
+            updateSafetyLED('safety-human-led', sf.human_detected, sf.human_detected ? 'red' : 'green');
+            document.getElementById('safety-human').textContent = sf.human_detected ? 'DÉTECTÉ' : 'Aucun';
+            updateSafetyLED('safety-battery-led', false, 'green');
+            document.getElementById('safety-battery').textContent = '—';
+            updateSafetyLED('safety-allclear-led', !sf.all_clear, sf.all_clear ? 'green' : 'red');
+            document.getElementById('safety-allclear').textContent = sf.all_clear ? 'OK' : 'ATTENTION';
+
+            // Selector
+            const pos = s.mode === 'auto' ? '0%' : s.mode === 'manual' ? '50%' : '100%';
+            document.getElementById('selector-indicator').style.left = pos;
+
+            // Suspended processes
+            if (s.suspended_processes && s.suspended_processes.length) {
+                // could display
+            }
+        }
+
+        function updateSafetyLED(id, active, color) {
+            const el = document.getElementById(id);
+            el.className = 'indicator ' + (active ? 'red' : color);
+        }
+
+        async function loadStatus() {
+            try {
+                const s = await api('/pixmode/status');
+                modeState = s;
+                updateBadges(s);
+                updateStats(s);
+            } catch (e) { console.error('status', e); }
+        }
+
+        async function loadHistory() {
+            try {
+                const h = await api('/pixmode/history?limit=20');
+                const list = document.getElementById('history-list');
+                if (!h.length) {
+                    list.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px">Aucun changement</div>';
+                    return;
+                }
+                list.innerHTML = h.reverse().map(e => `<div class="msg-item">
+                    <span class="ts">${e.from}</span> → <span class="${e.to === 'emergency' ? 'err' : 'ok'}">${e.to}</span>
+                    ${e.auth ? 'par ' + e.auth : ''}
+                    ${e.reason ? ': ' + e.reason : ''}
+                </div>`).join('');
+            } catch (e) { console.error('history', e); }
+        }
+
+        async function switchMode() {
+            const target = document.getElementById('mode-target').value;
+            const operator = document.getElementById('auth-operator').value;
+            const token = document.getElementById('auth-token').value;
+            const role = document.getElementById('auth-role').value;
+
+            const body = { mode: target };
+            if (operator && token) {
+                body.operator_id = operator;
+                body.token = token;
+                body.role = role;
+            }
+
+            const res = await api('/pixmode/mode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            showToast(res.message);
+            loadStatus();
+            loadHistory();
+        }
+
+        async function physicalSelector() {
+            const pos = document.getElementById('selector-pos').value;
+            const res = await api('/pixmode/selector', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ position: pos }),
+            });
+            showToast(res.message);
+            loadStatus();
+        }
+
+        async function kickDeadman() {
+            await api('/pixmode/deadman/kick', { method: 'POST' });
+            showToast('Deadman kick');
+            loadStatus();
+        }
+
+        async function sendCommand() {
+            const linear = parseFloat(document.getElementById('cmd-linear').value) || 0;
+            const angular = parseFloat(document.getElementById('cmd-angular').value) || 0;
+            const res = await api('/pixmode/command', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ linear_vel: linear, angular_vel: angular }),
+            });
+            document.getElementById('cmd-result').innerHTML =
+                `<span class="${res.accepted ? 'ok' : 'err'}">${res.accepted ? 'Commandé' : 'Refusé'}</span> ` +
+                `linear=${res.command.linear_vel.toFixed(2)} angular=${res.command.angular_vel.toFixed(2)} ` +
+                `<span style="color:#64748b">${res.message}</span>`;
+            loadStatus();
+        }
+
+        async function simulateObstacle() {
+            await api('/pixmode/safety', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    obstacle_ahead: true,
+                    obstacle_distance: 0.8,
+                    human_detected: false,
+                    battery_critical: false,
+                }),
+            });
+            showToast('Obstacle simulé');
+            loadStatus();
+        }
+
+        async function simulateHuman() {
+            await api('/pixmode/safety', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    obstacle_ahead: false,
+                    human_detected: true,
+                    battery_critical: false,
+                }),
+            });
+            showToast('Humain simulé');
+            loadStatus();
+        }
+
+        async function simulateClear() {
+            await api('/pixmode/safety', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    obstacle_ahead: false,
+                    obstacle_distance: 999.0,
+                    human_detected: false,
+                    battery_critical: false,
+                }),
+            });
+            showToast('Capteurs cleared');
+            loadStatus();
+        }
+
+        window.addEventListener('load', () => {
+            loadStatus();
+            loadHistory();
+            setInterval(loadStatus, 2000);
+            setInterval(loadHistory, 3000);
+        });
+    </script>
+</body>
+</html>
